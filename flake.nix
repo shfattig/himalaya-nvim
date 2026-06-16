@@ -217,6 +217,9 @@
               luajitPackages.luacheck
               parallel
 
+              # Task runner (recipes in justfile)
+              just
+
               # Testing + coverage
               busted-nlua
               luajitPackages.luacov
@@ -278,12 +281,8 @@
                 himalaya-nvim = self'.packages.default;
               }
             );
-            diag-hooks = pkgs.testers.runNixOSTest (
-              import ./tests/nixos/diag-hooks.nix { inherit pkgs; }
-            );
-            focus-test = pkgs.testers.runNixOSTest (
-              import ./tests/nixos/focus-test.nix { inherit pkgs; }
-            );
+            diag-hooks = pkgs.testers.runNixOSTest (import ./tests/nixos/diag-hooks.nix { inherit pkgs; });
+            focus-test = pkgs.testers.runNixOSTest (import ./tests/nixos/focus-test.nix { inherit pkgs; });
           };
         };
     };
