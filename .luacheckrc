@@ -1,5 +1,5 @@
 std = "lua51"
-read_globals = { "vim" }
+read_globals = { "vim", "bit" }
 globals = { "vim.g", "vim.b", "vim.w", "vim.o", "vim.bo", "vim.wo", "vim.go", "vim.opt_local" }
 
 files["tests/"] = {
@@ -10,6 +10,8 @@ files["tests/"] = {
   },
   globals = {
     "vim.fn", "vim.api", "vim.cmd", "vim.ui", "vim.notify", "vim.uv",
+    "vim.system", "vim.schedule", "vim.base64", "vim.defer_fn",
+    "io.open",
   },
 }
 

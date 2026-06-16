@@ -149,6 +149,19 @@ require('himalaya').setup({
     under = 'below',
   },
 
+  -- HTML image rendering (requires image.nvim + chrome-headless-shell).
+  -- binary: path to chrome-headless-shell (or compatible headless browser).
+  -- pixels_per_column: scale factor to convert buffer columns to viewport
+  --   pixels (default 8). Increase for sharper text on HiDPI displays.
+  render_html = {
+    binary = 'chrome-headless-shell',
+    pixels_per_column = 8,
+    device_scale_factor = 2,
+    max_screenshot_height = 5000,
+    -- When true, emails are rendered as images by default (gI toggles this).
+    image_mode = false,
+  },
+
   -- Enable mock mode (no CLI binary or email account needed)
   mock = false,
 })

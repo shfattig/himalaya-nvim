@@ -55,3 +55,15 @@ lint:
 # Format code
 fmt:
     nix fmt
+
+# Run NixOS integration test and update fixtures from VM output
+fixtures:
+    nom build .#checks.x86_64-linux.integration
+    rm -rf tests/fixtures/json tests/fixtures/plain
+    cp -r result/fixtures/json result/fixtures/plain tests/fixtures/
+
+# Regenerate diag hook logs from NixOS VM
+diag-logs:
+    nom build .#checks.x86_64-linux.diag-hooks
+    rm -f scripts/diag-hooks/*.log
+    cp result/diag-logs/*.log scripts/diag-hooks/

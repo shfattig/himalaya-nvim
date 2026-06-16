@@ -7,6 +7,9 @@
     treefmt-nix.url = "github:numtide/treefmt-nix";
     vhs.url = "github:agentstation/vhs";
     vhs.flake = false;
+    himalaya.url = "github:pimalaya/himalaya";
+    pimalaya-core.url = "github:pimalaya/core";
+    pimalaya-core.flake = false;
   };
 
   outputs =
@@ -23,6 +26,7 @@
       perSystem =
         {
           pkgs,
+          lib,
           self',
           system,
           ...
@@ -100,6 +104,16 @@
               wrapProgram $out/bin/busted --add-flags "--lua=nlua"
             '';
           });
+          himalaya-cli =
+            let
+              base = inputs.himalaya.packages.${system}.default;
+            in
+            base.overrideAttrs (old: {
+              postPatch = (old.postPatch or "") + ''
+                emailLibDir=$(find /build -maxdepth 3 -name 'email-lib-*' -type d | head -1)
+                cp -rT ${inputs.pimalaya-core}/email/src "$emailLibDir/src"
+              '';
+            });
           plugin =
             name: builtins.trace "${name} rev: ${pkgs.vimPlugins.${name}.src.rev}" pkgs.vimPlugins.${name};
           plugins = map plugin;
@@ -120,6 +134,7 @@
           treefmt = {
             projectRootFile = "flake.nix";
             programs.stylua.enable = true;
+            programs.deadnix.enable = true;
             programs.nixfmt.enable = true;
           };
 
@@ -164,6 +179,9 @@
             ${pkgs.lib.getExe pkgs.parallel} --tagstring '[{/.}]' --line-buffer \
               process_tape ::: demo/*.tape
           '';
+
+          # nix build .#himalaya-cli
+          packages.himalaya-cli = himalaya-cli;
 
           # nix build
           packages.default = pkgs.vimUtils.buildVimPlugin {
@@ -237,6 +255,35 @@
                 };
               })
             ];
+          };
+
+          checks = lib.optionalAttrs pkgs.stdenv.isLinux {
+            integration = pkgs.testers.runNixOSTest (
+              import ./tests/nixos/himalaya-nvim.nix {
+                inherit pkgs himalaya-cli;
+                himalaya-nvim = self'.packages.default;
+              }
+            );
+            lazy-nvim = pkgs.testers.runNixOSTest (
+              import ./tests/nixos/lazy-nvim.nix {
+                inherit pkgs himalaya-cli;
+                himalaya-nvim = self'.packages.default;
+              }
+            );
+            lazy-nvim-upstream = pkgs.testers.runNixOSTest (
+              import ./tests/nixos/lazy-nvim.nix {
+                inherit pkgs;
+                name = "himalaya-nvim-lazy-upstream";
+                himalaya-cli = inputs.himalaya.packages.${system}.default;
+                himalaya-nvim = self'.packages.default;
+              }
+            );
+            diag-hooks = pkgs.testers.runNixOSTest (
+              import ./tests/nixos/diag-hooks.nix { inherit pkgs; }
+            );
+            focus-test = pkgs.testers.runNixOSTest (
+              import ./tests/nixos/focus-test.nix { inherit pkgs; }
+            );
           };
         };
     };

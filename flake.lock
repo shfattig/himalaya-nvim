@@ -1,5 +1,28 @@
 {
   "nodes": {
+    "fenix": {
+      "inputs": {
+        "nixpkgs": [
+          "himalaya",
+          "nixpkgs"
+        ],
+        "rust-analyzer-src": "rust-analyzer-src"
+      },
+      "locked": {
+        "lastModified": 1767250179,
+        "narHash": "sha256-PnQdWvPZqHp+7yaHWDFX3NYSKaOy0fjkwpR+rIQC7AY=",
+        "owner": "nix-community",
+        "repo": "fenix",
+        "rev": "a3eaf682db8800962943a77ab77c0aae966f9825",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "ref": "monthly",
+        "repo": "fenix",
+        "type": "github"
+      }
+    },
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": "nixpkgs-lib"
@@ -18,18 +41,38 @@
         "type": "github"
       }
     },
+    "himalaya": {
+      "inputs": {
+        "fenix": "fenix",
+        "nixpkgs": "nixpkgs",
+        "pimalaya": "pimalaya"
+      },
+      "locked": {
+        "lastModified": 1771973819,
+        "narHash": "sha256-91P+AEIpzmhV7PCk4N3Dd5F+6eCSjwSGzNuMTV7pI8Q=",
+        "owner": "pimalaya",
+        "repo": "himalaya",
+        "rev": "f9bc426b8f157e4c10d8be4b8d8ff30be476e2e4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pimalaya",
+        "repo": "himalaya",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1771043024,
-        "narHash": "sha256-O1XDr7EWbRp+kHrNNgLWgIrB0/US5wvw9K6RERWAj6I=",
+        "lastModified": 1736437047,
+        "narHash": "sha256-JJBziecfU+56SUNxeJlDIgixJN5WYuADd+/TVd5sQos=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "3aadb7ca9eac2891d52a9dec199d9580a6e2bf44",
+        "rev": "f17b95775191ea44bc426831235d87affb10faba",
         "type": "github"
       },
       "original": {
         "owner": "nixos",
-        "ref": "nixos-25.11",
+        "ref": "staging-next",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -65,17 +108,84 @@
         "type": "github"
       }
     },
+    "nixpkgs_3": {
+      "locked": {
+        "lastModified": 1771043024,
+        "narHash": "sha256-O1XDr7EWbRp+kHrNNgLWgIrB0/US5wvw9K6RERWAj6I=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "3aadb7ca9eac2891d52a9dec199d9580a6e2bf44",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-25.11",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "pimalaya": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1770914484,
+        "narHash": "sha256-kPxdpg98/EVQKLkUdiFEYWWWI1uTLWfIewyCmb4ZfpE=",
+        "owner": "pimalaya",
+        "repo": "nix",
+        "rev": "23454cd59e2a32199a67f36f3b13cd5145b5ffb3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pimalaya",
+        "repo": "nix",
+        "type": "github"
+      }
+    },
+    "pimalaya-core": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1772395834,
+        "narHash": "sha256-+zp0WPMZ3Y9PgWWzNAAuUNKFUF7c2VrDijI82pA8GJk=",
+        "owner": "pimalaya",
+        "repo": "core",
+        "rev": "b3a9640a2b2e882f07655e711197b3dbd72ea176",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pimalaya",
+        "repo": "core",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "flake-parts": "flake-parts",
-        "nixpkgs": "nixpkgs",
+        "himalaya": "himalaya",
+        "nixpkgs": "nixpkgs_2",
+        "pimalaya-core": "pimalaya-core",
         "treefmt-nix": "treefmt-nix",
         "vhs": "vhs"
       }
     },
+    "rust-analyzer-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1767191410,
+        "narHash": "sha256-cCZGjubgDWmstvFkS6eAw2qk2ihgWkycw55u2dtLd70=",
+        "owner": "rust-lang",
+        "repo": "rust-analyzer",
+        "rev": "a9026e6d5068172bf5a0d52a260bb290961d1cb4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rust-lang",
+        "ref": "nightly",
+        "repo": "rust-analyzer",
+        "type": "github"
+      }
+    },
     "treefmt-nix": {
       "inputs": {
-        "nixpkgs": "nixpkgs_2"
+        "nixpkgs": "nixpkgs_3"
       },
       "locked": {
         "lastModified": 1770228511,
