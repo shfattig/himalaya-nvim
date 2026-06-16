@@ -162,6 +162,39 @@ signature ~
   When nil or when the current account has no matching key, no signature
   is appended.
 
+                                            *himalaya-config-render_html*
+render_html ~
+  Type: `table`
+
+  Inline HTML rendering: render an email's HTML to an image (on a
+  kitty/ghostty graphics terminal) and show it in the reading split,
+  toggled per-email with `gI`.
+
+  Requires a headless browser (`chrome-headless-shell`), ImageMagick
+  (`magick`), and the xav-ie fork of image.nvim:
+
+    https://github.com/xav-ie/image.nvim
+
+  The fork is REQUIRED — the smooth-scroll unicode-placeholder rendering,
+  preload, and batched-write support this feature relies on are not in
+  upstream image.nvim.
+
+  Key fields (see the README for the full annotated list):
+
+    `image_mode`            render as image by default (else `gI` toggles)
+    `placeholders`          kitty unicode-placeholder rendering — scrolls
+                            with the text grid, full-width, no seam flicker
+                            (recommended)
+    `progressive`           paint a fast low-res preview, then refine
+    `zoom`                  content size (CSS layout width), 100 = 1:1
+    `device_scale_factor`   capture sharpness (independent of `zoom`)
+    `dark`                  emulate prefers-color-scheme: dark
+    `chunked`               fallback viewport-tiling when placeholders are
+                            unavailable
+    `hybrid`                clickable/copyable/searchable text+link layer
+                            over the image (see
+                            |himalaya-reading-keybindings|)
+
 ==============================================================================
 5. COMMANDS                                               *himalaya-commands*
 
@@ -227,6 +260,21 @@ signature ~
   Remove a flag from the email(s) under cursor or in the visual selection.
   Prompts for the flag name.
 
+                                                      *:HimalayaHybridMode*
+:HimalayaHybridMode
+  Over a rendered email image, toggle `hjkl` node-navigation (jump between
+  text/link nodes instead of moving by cell). Requires `render_html.hybrid`.
+
+                                                      *:HimalayaHybridDots*
+:HimalayaHybridDots
+  Toggle alignment markers over the links (and text) of a rendered email
+  image — a debug/discovery overlay for the hybrid layer.
+
+                                                      *:HimalayaHybridDump*
+:HimalayaHybridDump
+  List the entities (links/text) extracted from the rendered email image,
+  with their positions.
+
 ==============================================================================
 6. KEYBINDINGS                                         *himalaya-keybindings*
 
@@ -275,6 +323,22 @@ Reading buffer (filetype: himalaya-email-reading) ~
   `gM`      `<Plug>(himalaya-email-select-folder-then-move)` Move to folder
   `gD`      `<Plug>(himalaya-email-delete)`            Delete email
   `gb`      `<Plug>(himalaya-email-open-browser)`      Open in browser
+  `gI`      `<Plug>(himalaya-email-toggle-image-mode)` Toggle HTML image render
+
+  Email image, hybrid layer ~
+
+  When an email is rendered as an image with `render_html.hybrid = true`
+  (see |himalaya-config-render_html|), these buffer-local keys act on the
+  links/text mapped over the image:
+
+    `f`           hint-jump: label every visible node, type to jump
+    `h` `j` `k` `l`   jump between text/link nodes
+    `gx` / `<CR>`  open the link under the cursor
+    `gy`          copy the link/text under the cursor
+    `K`           focus the hover popup (to scroll long content)
+    `g/`          search the email's text + links
+    `n` / `N`     cycle search matches
+    `<Esc>`       clear the search
 
 Writing buffer (filetype: himalaya-email-writing) ~
                                               *himalaya-writing-keybindings*

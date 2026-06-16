@@ -82,7 +82,10 @@ local defaults = {
     under = 'below',
   },
 
-  -- HTML image rendering (requires image.nvim + chrome-headless-shell).
+  -- HTML image rendering. REQUIRES the xav-ie fork of image.nvim
+  -- (https://github.com/xav-ie/image.nvim) — upstream image.nvim lacks the
+  -- unicode-placeholder, preload, and batched-write support this relies on —
+  -- plus chrome-headless-shell and ImageMagick (magick).
   -- binary: path to chrome-headless-shell (or compatible headless browser).
   -- pixels_per_column: scale factor to convert buffer columns to viewport
   --   pixels (default 8). Increase for sharper text on HiDPI displays.
@@ -129,10 +132,10 @@ local defaults = {
     -- over `chunked`; falls back to it (or single image) when unavailable or the
     -- image is too tall for the placeholder grid.
     placeholders = false,
-    -- Dark-mode rendering. When true, the email is rendered inverted (white
-    -- backgrounds become dark) with images/media re-inverted so they look
-    -- normal — works regardless of whether the email has a dark theme. Off by
-    -- default (emails render as authored, usually on white).
+    -- Dark-mode rendering. When true, the headless browser is told to emulate
+    -- `prefers-color-scheme: dark`, so emails render their OWN dark theme
+    -- instead of blinding white. Emails that don't support a dark theme still
+    -- render as authored. Off by default.
     dark = false,
     -- Hybrid text/image layer (experimental, placeholder mode only). When true,
     -- the headless render also extracts the email's links/text with their
