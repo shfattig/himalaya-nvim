@@ -15,6 +15,7 @@ local M = {}
 -- Module-local state
 local saved_view = nil
 local saved_cursor_id = nil -- email ID for cursor restoration after re-fetch
+local read_gen = 0 -- generation counter to cancel stale email.read() callbacks
 local resize_timer = nil -- vim.uv timer for debounced re-fetch
 local resize_job = nil -- in-flight resize re-fetch job handle
 local resize_generation = 0 -- incremented on kill; stale callbacks check this
@@ -580,12 +581,32 @@ function M.read()
   if current_id == '' or current_id == 'ID' then
     return
   end
+
+  read_gen = read_gen + 1
+  local my_gen = read_gen
+
+  local t0 = vim.uv.hrtime()
+  local function elapsed()
+    return (vim.uv.hrtime() - t0) / 1e6
+  end
+  local function plog(msg)
+    local f = io.open('/tmp/himalaya-image-perf.log', 'a')
+    if f then
+      f:write(
+        string.format('[%s] [+%7.1fms] read(%s gen=%d): %s\n', os.date('%H:%M:%S'), elapsed(), current_id, my_gen, msg)
+      )
+      f:close()
+    end
+  end
+  plog('START email read')
+
   -- Capture listing window synchronously before the async request,
   -- so the callback can reliably reference it even if focus changes.
   local listing_winid = vim.api.nvim_get_current_win()
   local context = require('himalaya.state.context')
   local account, folder = context.resolve()
   probe.cancel(function()
+    plog('probe cancelled, starting fetch')
     request.plain({
       cmd = 'message read %s --folder %q %s',
       args = { account_flag(account), folder, current_id },
@@ -594,6 +615,11 @@ function M.read()
         probe.restart()
       end,
       on_data = function(data)
+        if my_gen ~= read_gen then
+          plog('STALE — newer read started, discarding')
+          return
+        end
+        plog(string.format('fetch done (%d chars)', #data))
         -- Prepare email content into a buffer before showing it,
         -- so the split appears with content already loaded (no flash).
         local lines = vim.split(data:gsub('\r', ''), '\n')
@@ -606,6 +632,10 @@ function M.read()
         local reading_win = win.find_by_name('Himalaya/read email')
         if reading_win then
           vim.api.nvim_set_current_win(reading_win)
+          -- Clear any rendered image before reusing the buffer.
+          if vim.b.himalaya_image_rendered then
+            require('himalaya.domain.email.image').clear()
+          end
           reused = true
         end
 
@@ -638,22 +668,47 @@ function M.read()
         vim.b.himalaya_account = account
         vim.b.himalaya_folder = folder
         vim.b.himalaya_current_email_id = current_id
+        vim.b.himalaya_image_png = nil
         vim.bo.filetype = 'himalaya-email-reading'
         vim.bo.modified = false
         vim.cmd('0')
+        plog('buffer populated, email visible')
+
+        -- Pre-fetch HTML export in background so gi is instant.
+        local cur_buf = vim.api.nvim_get_current_buf()
+        local image_mod = require('himalaya.domain.email.image')
+        image_mod.prefetch(cur_buf, account, folder, current_id)
+
+        -- Auto-render as image when image_mode is enabled.
+        local render_cfg = require('himalaya.config').get().render_html
+        if render_cfg and render_cfg.image_mode then
+          local scheduled_id = current_id
+          vim.schedule(function()
+            if
+              vim.api.nvim_buf_is_valid(cur_buf)
+              and not vim.b[cur_buf].himalaya_image_rendered
+              and vim.b[cur_buf].himalaya_current_email_id == scheduled_id
+            then
+              image_mod.render()
+            end
+          end)
+        end
+
         require('himalaya.events').emit('EmailRead', {
           account = account,
           folder = folder,
           email_id = current_id,
-          bufnr = vim.api.nvim_get_current_buf(),
+          bufnr = cur_buf,
         })
         mark_envelope_seen(current_id)
-        -- Wipe stale email reading buffers
-        local cur_buf = vim.api.nvim_get_current_buf()
+        -- Wipe stale email reading buffers (clear images first).
         for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
           if vim.api.nvim_buf_is_valid(bufnr) and bufnr ~= cur_buf then
             local bname = vim.api.nvim_buf_get_name(bufnr)
             if bname:find('Himalaya/read email', 1, true) then
+              if vim.b[bufnr].himalaya_image_rendered then
+                require('himalaya.domain.email.image').clear(bufnr)
+              end
               vim.cmd('silent! bwipeout ' .. bufnr)
             end
           end

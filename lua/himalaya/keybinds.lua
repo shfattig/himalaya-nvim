@@ -159,6 +159,14 @@ function M.shared_listing_keybinds(bufnr)
     },
     { 'n', 'go', email.toggle_sort, 'email-toggle-sort' },
     { 'n', 'gb', email.open_browser, 'email-open-browser' },
+    {
+      'n',
+      'gI',
+      function()
+        require('himalaya.domain.email.image').toggle_mode()
+      end,
+      'email-toggle-image-mode',
+    },
     { 'n', '?', M.show_help, 'help' },
     { 'n', '<ScrollWheelUp>', 'k', 'scroll-up' },
     { 'n', '<ScrollWheelDown>', 'j', 'scroll-down' },

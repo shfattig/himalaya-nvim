@@ -56,6 +56,30 @@ function M.setup(bufnr)
     { 'n', 'gb', email.open_browser, 'email-open-browser' },
     {
       'n',
+      'gi',
+      function()
+        require('himalaya.domain.email.image').toggle()
+      end,
+      'email-render-image',
+    },
+    {
+      'n',
+      'gI',
+      function()
+        require('himalaya.domain.email.image').toggle_mode()
+      end,
+      'email-toggle-image-mode',
+    },
+    {
+      'n',
+      'gB',
+      function()
+        require('himalaya.domain.email.image').open_in_app()
+      end,
+      'email-open-image',
+    },
+    {
+      'n',
       ']]',
       function()
         navigate_email(1)
