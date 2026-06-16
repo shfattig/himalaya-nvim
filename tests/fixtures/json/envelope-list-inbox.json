@@ -1,0 +1,154 @@
+[
+  {
+    "id": "19",
+    "subject": "Conference talk accepted!",
+    "from": {"name": "Events", "addr": "events@techconf.io"},
+    "date": "2025-01-15T13:00:00+00:00",
+    "flags": ["Flagged", "Seen"],
+    "has_attachment": false
+  },
+  {
+    "id": "18",
+    "subject": "Design review notes",
+    "from": {"name": "Helen Park", "addr": "helen@localhost"},
+    "date": "2025-01-15T12:00:00+00:00",
+    "flags": ["Seen", "Answered"],
+    "has_attachment": false
+  },
+  {
+    "id": "17",
+    "subject": "Invoice #2024-089 attached",
+    "from": {"name": "Billing", "addr": "billing@vendor.com"},
+    "date": "2025-01-15T11:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": true
+  },
+  {
+    "id": "16",
+    "subject": "Security alert: new login detected",
+    "from": {"name": "Security", "addr": "security@company.com"},
+    "date": "2025-01-15T10:00:00+00:00",
+    "flags": ["Flagged"],
+    "has_attachment": false
+  },
+  {
+    "id": "15",
+    "subject": "Weekly newsletter: Tech digest",
+    "from": {"name": "TechDigest", "addr": "news@techdigest.io"},
+    "date": "2025-01-15T09:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  },
+  {
+    "id": "14",
+    "subject": "Have you tried himalaya nvim?",
+    "from": {"name": "Alice Foobar", "addr": "alice@localhost"},
+    "date": "2025-01-15T08:00:00+00:00",
+    "flags": [],
+    "has_attachment": false
+  },
+  {
+    "id": "13",
+    "subject": "Re: Q1 budget review",
+    "from": {"name": "Carol Davis", "addr": "carol@localhost"},
+    "date": "2025-01-14T18:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  },
+  {
+    "id": "12",
+    "subject": "Re: Q1 budget review",
+    "from": {"name": "David Lee", "addr": "david@localhost"},
+    "date": "2025-01-14T14:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  },
+  {
+    "id": "11",
+    "subject": "Q1 budget review",
+    "from": {"name": "Carol Davis", "addr": "carol@localhost"},
+    "date": "2025-01-14T09:00:00+00:00",
+    "flags": ["Seen", "Flagged"],
+    "has_attachment": true
+  },
+  {
+    "id": "10",
+    "subject": "Re: Team lunch this Friday?",
+    "from": {"name": "Bob Smith", "addr": "bob@localhost"},
+    "date": "2025-01-13T18:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  },
+  {
+    "id": "9",
+    "subject": "Team lunch this Friday?",
+    "from": {"name": "Grace Kim", "addr": "grace@localhost"},
+    "date": "2025-01-13T12:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  },
+  {
+    "id": "8",
+    "subject": "Re: Code review: auth module refactor",
+    "from": {"name": "Eve Martin", "addr": "eve@localhost"},
+    "date": "2025-01-13T09:00:00+00:00",
+    "flags": ["Seen", "Answered"],
+    "has_attachment": false
+  },
+  {
+    "id": "7",
+    "subject": "Re: Code review: auth module refactor",
+    "from": {"name": "Frank Wilson", "addr": "frank@localhost"},
+    "date": "2025-01-12T15:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  },
+  {
+    "id": "6",
+    "subject": "Code review: auth module refactor",
+    "from": {"name": "Eve Martin", "addr": "eve@localhost"},
+    "date": "2025-01-12T09:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  },
+  {
+    "id": "5",
+    "subject": "Re: Project Alpha release timeline",
+    "from": {"name": "Bob Smith", "addr": "bob@localhost"},
+    "date": "2025-01-11T15:00:00+00:00",
+    "flags": [],
+    "has_attachment": false
+  },
+  {
+    "id": "4",
+    "subject": "Re: Project Alpha release timeline",
+    "from": {"name": "David Lee", "addr": "david@localhost"},
+    "date": "2025-01-11T10:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  },
+  {
+    "id": "3",
+    "subject": "Re: Project Alpha release timeline",
+    "from": {"name": "Carol Davis", "addr": "carol@localhost"},
+    "date": "2025-01-10T18:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  },
+  {
+    "id": "2",
+    "subject": "Re: Project Alpha release timeline",
+    "from": {"name": "Alice Foobar", "addr": "alice@localhost"},
+    "date": "2025-01-10T14:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  },
+  {
+    "id": "1",
+    "subject": "Project Alpha release timeline",
+    "from": {"name": "Bob Smith", "addr": "bob@localhost"},
+    "date": "2025-01-10T09:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  }
+]

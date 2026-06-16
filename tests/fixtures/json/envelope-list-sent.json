@@ -1,0 +1,18 @@
+[
+  {
+    "id": "2",
+    "subject": "Re: Code review: auth module refactor",
+    "from": {"name": "Alice Foobar", "addr": "alice@localhost"},
+    "date": "2025-01-13T10:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  },
+  {
+    "id": "1",
+    "subject": "Re: Project Alpha release timeline",
+    "from": {"name": "Alice Foobar", "addr": "alice@localhost"},
+    "date": "2025-01-11T16:00:00+00:00",
+    "flags": ["Seen"],
+    "has_attachment": false
+  }
+]

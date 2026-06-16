@@ -1,0 +1,12 @@
+From: Alice Foobar <alice@localhost>
+To: bob@localhost
+Subject: Re: Project Alpha release timeline
+Date: 2025-01-10T14:00:00+00:00
+
+> Can we schedule a quick sync this week to align on the
+> remaining tasks?
+
+Sounds good, Bob. Thursday afternoon works best for me.
+I can share the API docs progress by then.
+
+Alice

@@ -1,0 +1,12 @@
+From: Carol Davis <carol@localhost>
+To: david@localhost
+Subject: Re: Q1 budget review
+Date: 2025-01-14T18:00:00+00:00
+
+> We could optimize by using spot instances for non-production workloads.
+
+Great suggestion, David. I'll add that to the optimization
+proposals for the finance review. Could save us around 30%
+on staging costs.
+
+Carol

@@ -1,0 +1,12 @@
+From: Alice Foobar <alice@localhost>
+To:
+Subject: Fwd: Design review notes
+
+---------- Forwarded message ----------
+From: Helen Park <helen@localhost>
+Date: 2025-01-15T12:00:00+00:00
+Subject: Design review notes
+
+Hi Alice,
+
+Here are my notes from the design review session.

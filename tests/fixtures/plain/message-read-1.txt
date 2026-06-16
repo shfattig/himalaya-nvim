@@ -1,0 +1,20 @@
+From: Bob Smith <bob@localhost>
+To: alice@localhost
+Subject: Project Alpha release timeline
+Date: 2025-01-10T09:00:00+00:00
+
+Hi team,
+
+I'd like to discuss the release timeline for Project Alpha.
+We're currently tracking well against our milestones, but
+there are a few items that need attention:
+
+1. API documentation is about 80% complete
+2. Integration tests need another pass
+3. The deployment pipeline is ready for staging
+
+Can we schedule a quick sync this week to align on the
+remaining tasks?
+
+Best,
+Bob

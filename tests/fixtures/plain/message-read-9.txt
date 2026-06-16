@@ -1,0 +1,13 @@
+From: Grace Kim <grace@localhost>
+To: alice@localhost
+Subject: Team lunch this Friday?
+Date: 2025-01-13T12:00:00+00:00
+
+Hey everyone!
+
+Anyone up for team lunch this Friday? I was thinking we
+could try that new ramen place on 5th Street.
+
+Let me know if you're in!
+
+Grace

@@ -1,0 +1,10 @@
+[
+  {
+    "id": "1",
+    "subject": "Draft: Meeting agenda",
+    "from": {"name": "Alice Foobar", "addr": "alice@localhost"},
+    "date": "2025-01-15T07:00:00+00:00",
+    "flags": ["Draft"],
+    "has_attachment": false
+  }
+]

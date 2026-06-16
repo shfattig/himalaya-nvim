@@ -1,0 +1,16 @@
+From: Billing <billing@vendor.com>
+To: alice@localhost
+Subject: Invoice #2024-089 attached
+Date: 2025-01-15T11:00:00+00:00
+
+Please find invoice #2024-089 attached for the annual
+software license renewal.
+
+Amount: $4,500.00
+Due date: 2025-02-15
+
+Payment can be made via bank transfer or credit card.
+
+Thank you for your continued business.
+
+-- Billing Department

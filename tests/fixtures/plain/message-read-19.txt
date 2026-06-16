@@ -1,0 +1,16 @@
+From: Events <events@techconf.io>
+To: alice@localhost
+Subject: Conference talk accepted!
+Date: 2025-01-15T13:00:00+00:00
+
+Congratulations! Your talk proposal has been accepted
+for TechConf 2025.
+
+Title: Building Modern CLI Tools with Rust
+Track: Systems Programming
+Date: March 15, 2025
+Time: 2:00 PM - 2:45 PM
+
+Please confirm your attendance by January 31st.
+
+-- TechConf Committee

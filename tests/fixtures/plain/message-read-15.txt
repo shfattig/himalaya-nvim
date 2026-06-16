@@ -1,0 +1,14 @@
+From: TechDigest <news@techdigest.io>
+To: alice@localhost
+Subject: Weekly newsletter: Tech digest
+Date: 2025-01-15T09:00:00+00:00
+
+This week in tech:
+
+- Rust 1.84 released with improved async support
+- New advances in WebAssembly component model
+- Open source highlight: himalaya email client
+
+Read more at techdigest.io
+
+-- TechDigest Team

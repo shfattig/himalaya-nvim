@@ -79,7 +79,7 @@ describe('himalaya.mock', function()
         return received ~= nil
       end)
       assert.is_not_nil(received)
-      assert.are.equal(10, #received)
+      assert.are.equal(9, #received)
     end)
 
     it('filters envelopes by subject query', function()
@@ -115,7 +115,8 @@ describe('himalaya.mock', function()
         return received ~= nil
       end)
       assert.is_not_nil(received)
-      assert.is_true(#received > 0)
+      -- Bob: UIDs 1, 5, 10
+      assert.are.equal(3, #received)
       for _, env in ipairs(received) do
         assert.is_truthy(env.from.name:lower():find('bob'))
       end
@@ -134,8 +135,8 @@ describe('himalaya.mock', function()
         return received ~= nil
       end)
       assert.is_not_nil(received)
-      -- Only Bob's messages about Alpha match
-      assert.is_true(#received > 0)
+      -- Only Bob's messages about Alpha match (UIDs 1, 5)
+      assert.are.equal(2, #received)
       for _, env in ipairs(received) do
         assert.is_truthy(env.subject:lower():find('alpha'))
         assert.is_truthy(env.from.name:lower():find('bob'))
@@ -155,7 +156,8 @@ describe('himalaya.mock', function()
         return received ~= nil
       end)
       assert.is_not_nil(received)
-      assert.is_true(#received > 0)
+      -- Flagged: UIDs 11, 16, 19
+      assert.are.equal(3, #received)
       for _, env in ipairs(received) do
         local has_flagged = false
         for _, f in ipairs(env.flags) do
@@ -180,7 +182,8 @@ describe('himalaya.mock', function()
         return received ~= nil
       end)
       assert.is_not_nil(received)
-      assert.is_true(#received > 0)
+      -- Without Seen: UIDs 5, 14, 16
+      assert.are.equal(3, #received)
       for _, env in ipairs(received) do
         local has_seen = false
         for _, f in ipairs(env.flags) do
@@ -205,8 +208,8 @@ describe('himalaya.mock', function()
         return received ~= nil
       end)
       assert.is_not_nil(received)
-      -- Should return all envelopes (order by is not a filter)
-      assert.are.equal(26, #received)
+      -- Should return all 19 INBOX envelopes
+      assert.are.equal(19, #received)
     end)
 
     it('reverses envelope order for order by asc', function()
@@ -246,8 +249,8 @@ describe('himalaya.mock', function()
         return received ~= nil
       end)
       assert.is_not_nil(received)
-      -- 5 threads + 12 standalone edges + thread internal edges
-      assert.is_true(#received > 16)
+      -- 4 threads (5+3+2+3 = 13 edges) + 6 standalone = 19 edges total
+      assert.are.equal(19, #received)
     end)
 
     it('returns empty table for unknown commands', function()
@@ -303,7 +306,7 @@ describe('himalaya.mock', function()
       local received
       mock.plain({
         cmd = 'message read %s --folder %s %s',
-        args = { '', 'INBOX', '1001' },
+        args = { '', 'INBOX', '1' },
         on_data = function(d)
           received = d
         end,
@@ -336,7 +339,7 @@ describe('himalaya.mock', function()
       local received
       mock.plain({
         cmd = 'template reply %s --folder %s %s',
-        args = { '', 'INBOX', '1006' },
+        args = { '', 'INBOX', '19' },
         on_data = function(d)
           received = d
         end,
@@ -346,14 +349,14 @@ describe('himalaya.mock', function()
       end)
       assert.is_not_nil(received)
       assert.is_truthy(received:find('Re:'))
-      assert.is_truthy(received:find('eve@example.com'))
+      assert.is_truthy(received:find('events@techconf.io'))
     end)
 
     it('routes template forward command', function()
       local received
       mock.plain({
         cmd = 'template forward %s --folder %s %s',
-        args = { '', 'INBOX', '1001' },
+        args = { '', 'INBOX', '19' },
         on_data = function(d)
           received = d
         end,
@@ -370,7 +373,7 @@ describe('himalaya.mock', function()
       mock.plain({
         cmd = 'template send %s',
         args = { '' },
-        stdin = 'From: user@example.com\nTo: test@test.com\n\nbody\n',
+        stdin = 'From: alice@localhost\nTo: test@test.com\n\nbody\n',
         on_data = function(d)
           received = d
         end,
@@ -385,7 +388,7 @@ describe('himalaya.mock', function()
       local received
       mock.plain({
         cmd = 'flag add %s --folder %s %s %s',
-        args = { '', 'INBOX', 'Seen', '1001' },
+        args = { '', 'INBOX', 'Seen', '1' },
         on_data = function(d)
           received = d
         end,
@@ -400,7 +403,7 @@ describe('himalaya.mock', function()
       local received
       mock.plain({
         cmd = 'message delete %s --folder %s %s',
-        args = { '', 'INBOX', '1001' },
+        args = { '', 'INBOX', '1' },
         on_data = function(d)
           received = d
         end,
@@ -415,7 +418,7 @@ describe('himalaya.mock', function()
       local received
       mock.plain({
         cmd = 'attachment download %s --folder %s %s',
-        args = { '', 'INBOX', '1001' },
+        args = { '', 'INBOX', '1' },
         on_data = function(d)
           received = d
         end,
@@ -426,11 +429,11 @@ describe('himalaya.mock', function()
       assert.are.equal('', received)
     end)
 
-    it('returns generic body for unscripted message IDs', function()
+    it('returns body for all INBOX messages', function()
       local received
       mock.plain({
         cmd = 'message read %s --folder %s %s',
-        args = { '', 'INBOX', '1025' },
+        args = { '', 'INBOX', '19' },
         on_data = function(d)
           received = d
         end,
@@ -439,7 +442,7 @@ describe('himalaya.mock', function()
         return received ~= nil
       end)
       assert.is_not_nil(received)
-      assert.is_truthy(received:find('Vacation request approved'))
+      assert.is_truthy(received:find('Conference talk accepted'))
     end)
   end)
 end)
@@ -453,9 +456,9 @@ describe('himalaya.mock.data', function()
   end)
 
   describe('accounts', function()
-    it('returns two accounts', function()
+    it('returns one account', function()
       local accounts = data.accounts()
-      assert.are.equal(2, #accounts)
+      assert.are.equal(1, #accounts)
     end)
 
     it('has one default account', function()
@@ -467,6 +470,11 @@ describe('himalaya.mock.data', function()
         end
       end
       assert.are.equal(1, defaults)
+    end)
+
+    it('account is named test', function()
+      local accounts = data.accounts()
+      assert.are.equal('test', accounts[1].name)
     end)
   end)
 
@@ -494,10 +502,10 @@ describe('himalaya.mock.data', function()
       assert.are.equal(10, #page1)
 
       local page2 = data.envelopes('INBOX', 10, 2)
-      assert.are.equal(10, #page2)
+      assert.are.equal(9, #page2)
 
       local page3 = data.envelopes('INBOX', 10, 3)
-      assert.are.equal(6, #page3)
+      assert.are.equal(0, #page3)
     end)
 
     it('returns envelopes with required fields', function()
@@ -519,7 +527,7 @@ describe('himalaya.mock.data', function()
 
     it('returns sent folder data', function()
       local envs = data.envelopes('Sent', 10, 1)
-      assert.is_true(#envs > 0)
+      assert.are.equal(2, #envs)
     end)
   end)
 
@@ -549,24 +557,24 @@ describe('himalaya.mock.data', function()
       local edges = data.thread_edges('INBOX')
       local ghost_count = 0
       for _, edge in ipairs(edges) do
-        if edge[1].id == 0 then
+        if edge[1].id == '0' then
           ghost_count = ghost_count + 1
         end
       end
-      -- 4 thread roots + 13 standalone = 17 ghost edges
-      assert.are.equal(17, ghost_count)
+      -- 4 thread roots + 6 standalone = 10 ghost edges
+      assert.are.equal(10, ghost_count)
     end)
   end)
 
   describe('message_body', function()
     it('returns body for known IDs', function()
-      local body = data.message_body(1001)
+      local body = data.message_body(1)
       assert.is_truthy(body:find('Project Alpha'))
     end)
 
-    it('returns generic body for unscripted IDs', function()
-      local body = data.message_body(1025)
-      assert.is_truthy(body:find('Vacation request approved'))
+    it('returns body for string IDs', function()
+      local body = data.message_body('19')
+      assert.is_truthy(body:find('Conference talk accepted'))
     end)
 
     it('returns fallback for unknown IDs', function()
@@ -584,12 +592,12 @@ describe('himalaya.mock.data', function()
     end)
 
     it('reply_template includes Re: prefix', function()
-      local t = data.reply_template(1001)
+      local t = data.reply_template(19)
       assert.is_truthy(t:find('Re:'))
     end)
 
     it('forward_template includes Fwd: prefix', function()
-      local t = data.forward_template(1001)
+      local t = data.forward_template(19)
       assert.is_truthy(t:find('Fwd:'))
     end)
 

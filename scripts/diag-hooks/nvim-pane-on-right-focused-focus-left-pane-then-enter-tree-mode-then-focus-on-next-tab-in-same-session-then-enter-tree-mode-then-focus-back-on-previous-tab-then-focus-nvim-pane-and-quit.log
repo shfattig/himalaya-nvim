@@ -1,0 +1,21 @@
+=== DIAG SESSION STARTED 2026-03-17 04:40:01 ===
+TMUX_PANE=%1  nvim_pid=3136
+---
+04:40:04.918 HOOK:pane-focus-in                  win=@0 pane=%1 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:04.941 HOOK:client-session-changed         win=@0 pane=%1 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:05.965 HOOK:pane-focus-out                 win=@0 pane=%0 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:05.965 HOOK:after-select-pane              win=@0 pane=%0 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:06.003 HOOK:pane-focus-in                  win=@0 pane=%0 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:06.040 HOOK:window-pane-changed            win=@0 pane=%0 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:07.032 HOOK:after-select-window            win=@1 pane=%2 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:07.034 HOOK:pane-focus-out                 win=@1 pane=%2 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:07.074 HOOK:pane-focus-in                  win=@1 pane=%2 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:07.113 HOOK:session-window-changed         win=@1 pane=%2 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:08.104 HOOK:after-select-window            win=@0 pane=%0 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:08.107 HOOK:pane-focus-out                 win=@0 pane=%0 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:08.147 HOOK:pane-focus-in                  win=@0 pane=%0 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:08.187 HOOK:session-window-changed         win=@0 pane=%0 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:09.181 HOOK:pane-focus-out                 win=@0 pane=%1 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:09.183 HOOK:after-select-pane              win=@0 pane=%1 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:09.222 HOOK:pane-focus-in                  win=@0 pane=%1 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:40:09.266 HOOK:window-pane-changed            win=@0 pane=%1 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main

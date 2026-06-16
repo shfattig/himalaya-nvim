@@ -1,0 +1,17 @@
+From: Carol Davis <carol@localhost>
+To: alice@localhost
+Subject: Q1 budget review
+Date: 2025-01-14T09:00:00+00:00
+
+Hi team,
+
+Please find the Q1 budget report attached. Key highlights:
+
+- Engineering spend is 5% under budget
+- Cloud infrastructure costs increased by 12%
+- We have room for two additional hires in Q2
+
+Let me know if you have any questions before the
+finance review on Monday.
+
+Carol

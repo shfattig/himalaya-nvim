@@ -1,0 +1,12 @@
+From: Carol Davis <carol@localhost>
+To: bob@localhost
+Subject: Re: Project Alpha release timeline
+Date: 2025-01-10T18:00:00+00:00
+
+> Can we schedule a quick sync this week to align on the
+> remaining tasks?
+
+Thursday works for me too. I'll prepare the integration
+test coverage report.
+
+Carol

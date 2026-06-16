@@ -246,6 +246,9 @@ describe('himalaya.domain.email (extended)', function()
         captured_plain = opts
         return { kill = function() end }
       end,
+      _build_cmd = function()
+        return { 'true' }
+      end,
     }
     package.loaded['himalaya.domain.email.probe'] = {
       reset_if_changed = function() end,

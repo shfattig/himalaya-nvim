@@ -1,0 +1,12 @@
+From: Bob Smith <bob@localhost>
+To: alice@localhost, carol@localhost, david@localhost
+Subject: Re: Project Alpha release timeline
+Date: 2025-01-11T15:00:00+00:00
+
+> are we targeting the v2.1 or v2.2 branch for the release?
+
+Good question. Let's go with v2.2 since it includes the
+new auth module that Eve's been working on. Thursday at
+3pm it is!
+
+Bob

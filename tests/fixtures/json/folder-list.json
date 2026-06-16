@@ -1,0 +1,8 @@
+[
+  {"name": "INBOX"},
+  {"name": "Drafts"},
+  {"name": "Sent"},
+  {"name": "Archive"},
+  {"name": "Trash"},
+  {"name": "Spam"}
+]

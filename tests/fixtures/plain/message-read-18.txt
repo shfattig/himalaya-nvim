@@ -1,0 +1,16 @@
+From: Helen Park <helen@localhost>
+To: alice@localhost
+Subject: Design review notes
+Date: 2025-01-15T12:00:00+00:00
+
+Hi Alice,
+
+Here are my notes from the design review session:
+
+1. The new dashboard layout looks great
+2. Consider increasing contrast on the sidebar icons
+3. The mobile responsive breakpoints need adjustment
+
+Let me know if you want to pair on any of these items.
+
+Helen

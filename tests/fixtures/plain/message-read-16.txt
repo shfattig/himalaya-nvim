@@ -1,0 +1,15 @@
+From: Security <security@company.com>
+To: alice@localhost
+Subject: Security alert: new login detected
+Date: 2025-01-15T10:00:00+00:00
+
+A new sign-in to your account was detected:
+
+  Device:   Linux (Firefox 125)
+  Location: San Francisco, CA
+  Time:     2025-01-15T10:00:00+00:00
+
+If this was you, no action is needed.
+If not, please change your password immediately.
+
+-- Security Team

@@ -1,0 +1,13 @@
+=== DIAG SESSION STARTED 2026-03-17 04:37:43 ===
+TMUX_PANE=%1  nvim_pid=1153
+---
+04:37:46.024 HOOK:pane-focus-in                  win=@0 pane=%1 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:37:46.045 HOOK:client-session-changed         win=@0 pane=%1 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:37:47.063 HOOK:after-select-pane              win=@0 pane=%0 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:37:47.064 HOOK:pane-focus-out                 win=@0 pane=%0 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:37:47.104 HOOK:pane-focus-in                  win=@0 pane=%0 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:37:47.139 HOOK:window-pane-changed            win=@0 pane=%0 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:37:48.133 HOOK:pane-focus-out                 win=@0 pane=%1 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:37:48.133 HOOK:after-select-pane              win=@0 pane=%1 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:37:48.171 HOOK:pane-focus-in                  win=@0 pane=%1 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main
+04:37:48.209 HOOK:window-pane-changed            win=@0 pane=%1 win_active=1 pane_active=1 sess_att=1 mode='' sess=$0 zoomed=0 client_sess=main

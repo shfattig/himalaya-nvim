@@ -1,0 +1,11 @@
+From: Alice Foobar <alice@localhost>
+To:
+Subject: Fwd: Conference talk accepted!
+
+---------- Forwarded message ----------
+From: Events <events@techconf.io>
+Date: 2025-01-15T13:00:00+00:00
+Subject: Conference talk accepted!
+
+Congratulations! Your talk proposal has been accepted
+for TechConf 2025.

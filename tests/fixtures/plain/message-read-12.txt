@@ -1,0 +1,12 @@
+From: David Lee <david@localhost>
+To: carol@localhost
+Subject: Re: Q1 budget review
+Date: 2025-01-14T14:00:00+00:00
+
+> Cloud infrastructure costs increased by 12%
+
+Carol, I noticed the cloud cost increase is mainly from
+the new staging environments we spun up. We could optimize
+by using spot instances for non-production workloads.
+
+David

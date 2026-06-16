@@ -1,0 +1,12 @@
+From: Eve Martin <eve@localhost>
+To: frank@localhost
+Subject: Re: Code review: auth module refactor
+Date: 2025-01-13T09:00:00+00:00
+
+> Took a quick pass. Overall looks clean!
+
+Thanks for the thorough review, Frank! I've addressed all
+three points. The constant-time comparison was a good catch.
+Updated PR is ready for another look.
+
+Eve

@@ -1,0 +1,19 @@
+From: Eve Martin <eve@localhost>
+To: frank@localhost
+Subject: Code review: auth module refactor
+Date: 2025-01-12T09:00:00+00:00
+
+Hi Frank,
+
+I've pushed the auth module refactor to the feature branch.
+The main changes are:
+
+- Moved from session-based to JWT authentication
+- Added refresh token rotation
+- Updated all middleware to use the new auth context
+
+Could you take a look when you get a chance? No rush, but
+it would be great to merge before the release sync.
+
+Thanks,
+Eve

@@ -1,0 +1,12 @@
+From: David Lee <david@localhost>
+To: bob@localhost
+Subject: Re: Project Alpha release timeline
+Date: 2025-01-11T10:00:00+00:00
+
+> Thursday works for me too.
+
+Same here. I'll have the staging deployment checklist
+ready. One question -- are we targeting the v2.1 or v2.2
+branch for the release?
+
+David

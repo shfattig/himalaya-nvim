@@ -1,0 +1,16 @@
+From: Frank Wilson <frank@localhost>
+To: eve@localhost
+Subject: Re: Code review: auth module refactor
+Date: 2025-01-12T15:00:00+00:00
+
+> Could you take a look when you get a chance?
+
+Took a quick pass. Overall looks clean! A few suggestions:
+
+1. The token validation could use a constant-time comparison
+2. Consider adding rate limiting on the refresh endpoint
+3. Minor: there's a typo in the error message on line 142
+
+I'll approve once those are addressed.
+
+Frank

@@ -212,6 +212,7 @@ describe('himalaya.keybinds', function()
         'gm',
         'go',
         'gb',
+        'gI',
         '?',
       })
     end)

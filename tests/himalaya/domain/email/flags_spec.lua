@@ -82,11 +82,14 @@ describe('himalaya.domain.email.flags', function()
 
     it('logs seen, unseen, and unknown counts', function()
       vim.g.himalaya_debug = true
+      local orig_echo = vim.api.nvim_echo
+      vim.api.nvim_echo = function() end
       flags.debug_flags('test', {
         { flags = { 'Seen' } },
         { flags = { 'Answered' } },
         {},
       })
+      vim.api.nvim_echo = orig_echo
     end)
   end)
 
@@ -101,10 +104,13 @@ describe('himalaya.domain.email.flags', function()
 
     it('extracts envs from rows and logs', function()
       vim.g.himalaya_debug = true
+      local orig_echo = vim.api.nvim_echo
+      vim.api.nvim_echo = function() end
       flags.debug_flags_rows('test', {
         { env = { flags = { 'Seen' } } },
         { env = {} },
       })
+      vim.api.nvim_echo = orig_echo
     end)
   end)
 

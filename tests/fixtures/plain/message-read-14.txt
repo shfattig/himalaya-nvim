@@ -1,0 +1,10 @@
+From: Alice Foobar <alice@localhost>
+To: alice@localhost
+Subject: Have you tried himalaya nvim?
+Date: 2025-01-15T08:00:00+00:00
+
+Hey, have you tried himalaya-nvim? It's a terminal email
+client plugin for Neovim. Pretty neat for managing email
+without leaving the editor.
+
+Alice
