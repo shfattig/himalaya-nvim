@@ -436,7 +436,9 @@ let
   ) scenarios;
 
   scenarioNames = map (s: s.name) scenarios;
-  scenarioPairs = pkgs.lib.zipListsWith (script: name: { inherit script name; }) scenarioScripts scenarioNames;
+  scenarioPairs = pkgs.lib.zipListsWith (script: name: {
+    inherit script name;
+  }) scenarioScripts scenarioNames;
 in
 {
   name = "diag-hooks";

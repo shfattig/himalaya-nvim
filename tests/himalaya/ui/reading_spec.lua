@@ -96,7 +96,7 @@ describe('himalaya.ui.reading', function()
     assert.is_truthy(vim.wo[winid].winbar:find('42'))
   end)
 
-  it('setup() registers exactly 15 normal-mode keybinds', function()
+  it('setup() registers exactly 16 normal-mode keybinds', function()
     reading.setup(bufnr)
     local maps = vim.api.nvim_buf_get_keymap(bufnr, 'n')
     local count = 0
@@ -105,7 +105,8 @@ describe('himalaya.ui.reading', function()
         count = count + 1
       end
     end
-    assert.equals(15, count)
+    -- 16 = the base reading binds + gI (toggle HTML image rendering)
+    assert.equals(16, count)
   end)
 
   describe('navigate_email via keybinds', function()

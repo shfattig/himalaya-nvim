@@ -426,177 +426,173 @@ function M._show_image_chunked(image, bufnr, winid, png_path, plog)
 
   -- Resize the whole email to image.nvim's exact render width once, then build
   -- the tiles from the scaled copy.
-  vim.system(
-    { 'magick', png_path, '-resize', target_w .. 'x', '+repage', scaled },
-    { text = true },
-    function(rz)
-      vim.schedule(function()
+  vim.system({ 'magick', png_path, '-resize', target_w .. 'x', '+repage', scaled }, { text = true }, function(rz)
+    vim.schedule(function()
+      if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_win_is_valid(winid) then
+        return
+      end
+      local src, sw, sh
+      if rz.code == 0 then
+        sw, sh = M._read_png_size(scaled)
+      end
+      if sw and sh and sw > 0 and sh > 0 then
+        src = scaled
+      else
+        -- Resize failed — fall back to slicing the original (image.nvim will
+        -- resize each tile, slower, but still correct).
+        clog('full resize failed; slicing original')
+        src, sw, sh = png_path, img_w, img_h
+      end
+
+      local total_rows = math.ceil(sh / cell_h)
+      local num_chunks = math.ceil(total_rows / chunk_rows)
+      set_filler(total_rows)
+
+      clog(
+        string.format(
+          'scaled=%dx%d total_rows=%d chunk_rows=%d num_chunks=%d',
+          sw,
+          sh,
+          total_rows,
+          chunk_rows,
+          num_chunks
+        )
+      )
+
+      -- Tile layout: row boundaries map to pixel boundaries through cell_h, so
+      -- tiles abut exactly on cell rows (no gap, no overlap).
+      local chunks = {}
+      for i = 0, num_chunks - 1 do
+        local anchor_y = i * chunk_rows
+        local rows_i = math.min(chunk_rows, total_rows - anchor_y)
+        local y_top = math.floor(anchor_y * cell_h + 0.5)
+        local y_bot = math.min(math.floor((anchor_y + rows_i) * cell_h + 0.5), sh)
+        if y_bot > y_top then
+          chunks[#chunks + 1] = {
+            index = i,
+            anchor_y = anchor_y,
+            y_top = y_top,
+            chunk_px = y_bot - y_top,
+            file = (png_path:gsub('%.png$', '')) .. '.c' .. i .. '.png',
+            id = png_path .. '#' .. i,
+          }
+        end
+      end
+
+      -- Clear leftover tiles from a previous (taller) render of this buffer —
+      -- e.g. a progressive first pass that produced more chunks than this one.
+      local prev_count = vim.b[bufnr].himalaya_chunk_count or 0
+      if prev_count > #chunks then
+        local keep = {}
+        for _, c in ipairs(chunks) do
+          keep[c.id] = true
+        end
+        for _, im in ipairs(image.get_images({ buffer = bufnr })) do
+          if not keep[im.id] then
+            im:clear()
+          end
+        end
+      end
+      vim.b[bufnr].himalaya_chunk_count = #chunks
+
+      vim.b[bufnr].himalaya_image_rendered = true
+      vim.b[bufnr].himalaya_image_png = png_path
+      vim.b[bufnr].himalaya_saved_lines = saved_lines
+      M._apply_image_scroll_maps(bufnr)
+
+      local base = vim.b[bufnr].himalaya_original_winbar or vim.wo[winid].winbar or ''
+      vim.b[bufnr].himalaya_original_winbar = base
+      vim.wo[winid].winbar = base .. ' [IMAGE]'
+
+      local t0 = vim.uv.hrtime()
+      local placed = 0
+      local placed_imgs = {}
+      local first_paint_logged = false
+
+      local function place(c)
         if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_win_is_valid(winid) then
           return
         end
-        local src, sw, sh
-        if rz.code == 0 then
-          sw, sh = M._read_png_size(scaled)
+        local img = image.from_file(c.file, {
+          id = c.id,
+          buffer = bufnr,
+          window = winid,
+          x = 0,
+          y = c.anchor_y,
+          width = win_width,
+          max_height_window_percentage = 9999,
+        })
+        if not img then
+          clog('from_file failed for ' .. c.file)
+          return
         end
-        if sw and sh and sw > 0 and sh > 0 then
-          src = scaled
-        else
-          -- Resize failed — fall back to slicing the original (image.nvim will
-          -- resize each tile, slower, but still correct).
-          clog('full resize failed; slicing original')
-          src, sw, sh = png_path, img_w, img_h
+        img:render()
+        placed_imgs[c.index] = img
+        placed = placed + 1
+        -- Chunk 0 covers the visible top — log when it lands so we can compare
+        -- time-to-first-paint against the full stack completing.
+        if c.index == 0 and not first_paint_logged then
+          first_paint_logged = true
+          clog(string.format('first tile painted at %.1fms', (vim.uv.hrtime() - t0) / 1e6))
         end
-
-        local total_rows = math.ceil(sh / cell_h)
-        local num_chunks = math.ceil(total_rows / chunk_rows)
-        set_filler(total_rows)
-
-        clog(
-          string.format(
-            'scaled=%dx%d total_rows=%d chunk_rows=%d num_chunks=%d',
-            sw,
-            sh,
-            total_rows,
-            chunk_rows,
-            num_chunks
-          )
-        )
-
-        -- Tile layout: row boundaries map to pixel boundaries through cell_h, so
-        -- tiles abut exactly on cell rows (no gap, no overlap).
-        local chunks = {}
-        for i = 0, num_chunks - 1 do
-          local anchor_y = i * chunk_rows
-          local rows_i = math.min(chunk_rows, total_rows - anchor_y)
-          local y_top = math.floor(anchor_y * cell_h + 0.5)
-          local y_bot = math.min(math.floor((anchor_y + rows_i) * cell_h + 0.5), sh)
-          if y_bot > y_top then
-            chunks[#chunks + 1] = {
-              index = i,
-              anchor_y = anchor_y,
-              y_top = y_top,
-              chunk_px = y_bot - y_top,
-              file = (png_path:gsub('%.png$', '')) .. '.c' .. i .. '.png',
-              id = png_path .. '#' .. i,
-            }
-          end
-        end
-
-        -- Clear leftover tiles from a previous (taller) render of this buffer —
-        -- e.g. a progressive first pass that produced more chunks than this one.
-        local prev_count = vim.b[bufnr].himalaya_chunk_count or 0
-        if prev_count > #chunks then
-          local keep = {}
-          for _, c in ipairs(chunks) do
-            keep[c.id] = true
-          end
-          for _, im in ipairs(image.get_images({ buffer = bufnr })) do
-            if not keep[im.id] then
-              im:clear()
+        if placed == #chunks then
+          clog(string.format('all %d tiles placed at %.1fms', #chunks, (vim.uv.hrtime() - t0) / 1e6))
+          -- Background-preload every tile shortly after first paint: off-screen
+          -- tiles get transmitted to the terminal now so that scrolling to one
+          -- shows it instantly, instead of paying the transmit latency at that
+          -- moment (a one-time blank-gap flicker the first time each tile
+          -- appears). Deferred + transmit-only, so it doesn't delay first paint
+          -- or place anything; tiles already visible are no-ops (cache hit).
+          vim.defer_fn(function()
+            if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_win_is_valid(winid) then
+              return
             end
-          end
+            for _, im in pairs(placed_imgs) do
+              if im and im.preload then
+                pcall(function()
+                  im:preload()
+                end)
+              end
+            end
+          end, 80)
         end
-        vim.b[bufnr].himalaya_chunk_count = #chunks
+      end
 
-        vim.b[bufnr].himalaya_image_rendered = true
-        vim.b[bufnr].himalaya_image_png = png_path
-        vim.b[bufnr].himalaya_saved_lines = saved_lines
-        M._apply_image_scroll_maps(bufnr)
-
-        local base = vim.b[bufnr].himalaya_original_winbar or vim.wo[winid].winbar or ''
-        vim.b[bufnr].himalaya_original_winbar = base
-        vim.wo[winid].winbar = base .. ' [IMAGE]'
-
-        local t0 = vim.uv.hrtime()
-        local placed = 0
-        local placed_imgs = {}
-        local first_paint_logged = false
-
-        local function place(c)
-          if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_win_is_valid(winid) then
-            return
-          end
-          local img = image.from_file(c.file, {
-            id = c.id,
-            buffer = bufnr,
-            window = winid,
-            x = 0,
-            y = c.anchor_y,
-            width = win_width,
-            max_height_window_percentage = 9999,
-          })
-          if not img then
-            clog('from_file failed for ' .. c.file)
-            return
-          end
-          img:render()
-          placed_imgs[c.index] = img
-          placed = placed + 1
-          -- Chunk 0 covers the visible top — log when it lands so we can compare
-          -- time-to-first-paint against the full stack completing.
-          if c.index == 0 and not first_paint_logged then
-            first_paint_logged = true
-            clog(string.format('first tile painted at %.1fms', (vim.uv.hrtime() - t0) / 1e6))
-          end
-          if placed == #chunks then
-            clog(string.format('all %d tiles placed at %.1fms', #chunks, (vim.uv.hrtime() - t0) / 1e6))
-            -- Background-preload every tile shortly after first paint: off-screen
-            -- tiles get transmitted to the terminal now so that scrolling to one
-            -- shows it instantly, instead of paying the transmit latency at that
-            -- moment (a one-time blank-gap flicker the first time each tile
-            -- appears). Deferred + transmit-only, so it doesn't delay first paint
-            -- or place anything; tiles already visible are no-ops (cache hit).
-            vim.defer_fn(function()
-              if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_win_is_valid(winid) then
+      -- Slice every tile in parallel; place each the instant its slice lands.
+      -- Off-screen tiles cost only a from_file + an early-return in image.nvim
+      -- (no transmit), so the visible tile paints without waiting on the rest.
+      --
+      -- magick writes to a temp file which is then atomically renamed onto the
+      -- tile path. A progressive second pass re-slices the SAME tile files, and
+      -- image.nvim may be reading one on a scroll re-render at that moment;
+      -- writing in place would let it read a half-written PNG (magick identify
+      -- "unexpected end-of-file", and torn image bytes spilling to the screen).
+      -- The rename is the only mutation of c.file, so a concurrent reader
+      -- always sees a complete file — the old one or the new one, never a mix.
+      for _, c in ipairs(chunks) do
+        local work = c.file .. '.work'
+        vim.system(
+          { 'magick', src, '-crop', sw .. 'x' .. c.chunk_px .. '+0+' .. c.y_top, '+repage', work },
+          { text = true },
+          function(res)
+            vim.schedule(function()
+              if res.code ~= 0 then
+                clog(string.format('slice %d failed: %s', c.index, (res.stderr or ''):gsub('%s+', ' ')))
                 return
               end
-              for _, im in pairs(placed_imgs) do
-                if im and im.preload then
-                  pcall(function()
-                    im:preload()
-                  end)
-                end
+              local ok, err = os.rename(work, c.file)
+              if not ok then
+                clog(string.format('slice %d rename failed (%s); copying', c.index, tostring(err)))
+                pcall(vim.uv.fs_copyfile, work, c.file)
+                pcall(os.remove, work)
               end
-            end, 80)
+              place(c)
+            end)
           end
-        end
-
-        -- Slice every tile in parallel; place each the instant its slice lands.
-        -- Off-screen tiles cost only a from_file + an early-return in image.nvim
-        -- (no transmit), so the visible tile paints without waiting on the rest.
-        --
-        -- magick writes to a temp file which is then atomically renamed onto the
-        -- tile path. A progressive second pass re-slices the SAME tile files, and
-        -- image.nvim may be reading one on a scroll re-render at that moment;
-        -- writing in place would let it read a half-written PNG (magick identify
-        -- "unexpected end-of-file", and torn image bytes spilling to the screen).
-        -- The rename is the only mutation of c.file, so a concurrent reader
-        -- always sees a complete file — the old one or the new one, never a mix.
-        for _, c in ipairs(chunks) do
-          local work = c.file .. '.work'
-          vim.system(
-            { 'magick', src, '-crop', sw .. 'x' .. c.chunk_px .. '+0+' .. c.y_top, '+repage', work },
-            { text = true },
-            function(res)
-              vim.schedule(function()
-                if res.code ~= 0 then
-                  clog(string.format('slice %d failed: %s', c.index, (res.stderr or ''):gsub('%s+', ' ')))
-                  return
-                end
-                local ok, err = os.rename(work, c.file)
-                if not ok then
-                  clog(string.format('slice %d rename failed (%s); copying', c.index, tostring(err)))
-                  pcall(vim.uv.fs_copyfile, work, c.file)
-                  pcall(os.remove, work)
-                end
-                place(c)
-              end)
-            end
-          )
-        end
-      end)
-    end
-  )
+        )
+      end
+    end)
+  end)
 end
 
 --- When placeholders can't be used (too tall, missing prerequisites), fall back
@@ -691,7 +687,17 @@ function M._show_image_placeholders(image, bufnr, winid, png_path, plog)
   local target_w = math.floor(cols * cell_w + 0.5)
   local scaled = (png_path:gsub('%.png$', '')) .. '.ph.png'
   local work = scaled .. '.work'
-  clog(string.format('png=%dx%d cols=%d target_w=%d textoff=%d reentry=%s', img_w or 0, img_h, cols, target_w, textoff, tostring(is_reentry)))
+  clog(
+    string.format(
+      'png=%dx%d cols=%d target_w=%d textoff=%d reentry=%s',
+      img_w or 0,
+      img_h,
+      cols,
+      target_w,
+      textoff,
+      tostring(is_reentry)
+    )
+  )
 
   -- magick to a temp file then atomic rename, so a concurrent focus re-transmit
   -- never reads a half-written scaled PNG.
@@ -716,7 +722,14 @@ function M._show_image_placeholders(image, bufnr, winid, png_path, plog)
 
       local rows = math.ceil(sh / cell_h)
       if rows > PH_MAX or cols > PH_MAX then
-        clog(string.format('too large for single-diacritic grid (rows=%d cols=%d max=%d) — falling back', rows, cols, PH_MAX))
+        clog(
+          string.format(
+            'too large for single-diacritic grid (rows=%d cols=%d max=%d) — falling back',
+            rows,
+            cols,
+            PH_MAX
+          )
+        )
         if not is_reentry then
           vim.b[bufnr].himalaya_ph_id = nil
           ph_state[bufnr] = nil
@@ -1070,7 +1083,6 @@ function M._hybrid_show_preview(bufnr, e, idx, header, query)
       else
         if cur ~= '' then
           out[#out + 1] = cur
-          cur = ''
         end
         local piece = ''
         for _, ch in ipairs(vim.fn.split(word, '\\zs')) do
@@ -1499,7 +1511,7 @@ function M._hybrid_hint(bufnr)
   end
   -- visible entities (anchor row within the viewport), in reading order
   local targets = {}
-  for i, e in ipairs(mapped) do
+  for _, e in ipairs(mapped) do
     local r = e.rects[1]
     if r and (r.cr0 + 1) >= info.topline and (r.cr0 + 1) <= info.botline then
       targets[#targets + 1] = { e = e, row = r.cr0, cell = r.cc0 }
@@ -2387,11 +2399,11 @@ function M.render()
                 client:send(
                   'Runtime.evaluate',
                   { expression = 'document.readyState', returnByValue = true },
-                  function(err, result)
+                  function(poll_err, result)
                     if is_stale() then
                       return
                     end
-                    local state = (not err) and result and result.result and result.result.value or nil
+                    local state = (not poll_err) and result and result.result and result.result.value or nil
                     if not first_started and (state == 'interactive' or state == 'complete') then
                       first_started = true
                       if state == 'complete' then
@@ -2677,7 +2689,8 @@ if not M._hybrid_cmds_done then
     local out = {}
     for i, e in ipairs(m) do
       local r = e.rects[1]
-      out[#out + 1] = string.format('%2d [%s] r%d c%d  %s', i, e.type, r.cr0, r.cc0, (e.href or e.text or ''):sub(1, 90))
+      out[#out + 1] =
+        string.format('%2d [%s] r%d c%d  %s', i, e.type, r.cr0, r.cc0, (e.href or e.text or ''):sub(1, 90))
     end
     vim.notify(table.concat(out, '\n'))
   end, { desc = 'List hybrid entities and their buffer-cell positions' })

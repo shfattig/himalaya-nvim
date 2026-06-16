@@ -371,9 +371,11 @@ describe('himalaya.domain.email.image', function()
 
       image_mod._show_image(fake_image_mod, bufnr, winid, '/tmp/test.png', plog)
 
-      assert.are.equal(2, #plog_messages)
-      assert.truthy(plog_messages[1]:find('image.nvim render:'))
-      assert.truthy(plog_messages[2]:find('DONE'))
+      assert.are.equal(4, #plog_messages)
+      assert.truthy(plog_messages[1]:find('image src dims'))
+      assert.truthy(plog_messages[2]:find('image.nvim render:'))
+      assert.truthy(plog_messages[3]:find('filler correction'))
+      assert.truthy(plog_messages[4]:find('DONE'))
 
       vim.api.nvim_win_close(winid, true)
       vim.api.nvim_buf_delete(bufnr, { force = true })
@@ -998,6 +1000,9 @@ describe('himalaya.domain.email.image', function()
       -- No data-sh in stdout, so content_height = max_height (no crop needed)
       fallback_cb({ code = 0, stdout = '', stderr = '' })
 
+      -- trim_then_show probes magick before showing; feed it (no bbox -> show)
+      ctx.get_fallback_cb()({ code = 0, stdout = '' })
+
       assert.is_true(show_image_called)
       vim.schedule = orig_schedule
       ctx.restore()
@@ -1097,6 +1102,9 @@ describe('himalaya.domain.email.image', function()
       assert.is_not_nil(crop_cb)
       crop_cb({ code = 1 })
 
+      -- trim_then_show probes magick before showing; feed it (no bbox -> show)
+      ctx.get_fallback_cb()({ code = 0, stdout = '' })
+
       assert.are.equal(1, #log_calls.warn)
       assert.truthy(log_calls.warn[1]:find('magick crop failed'))
       assert.is_true(show_image_called)
@@ -1170,8 +1178,13 @@ describe('himalaya.domain.email.image', function()
       assert.are.equal('Page.captureScreenshot', cdp_client.sends[6].method)
       cdp_client.sends[6].cb(nil, { data = 'base64png' })
 
+      -- trim_then_show probes magick before showing; feed it (no bbox -> show)
+      ctx.get_fallback_cb()({ code = 0, stdout = '' })
+
       assert.is_true(show_image_called)
-      assert.truthy(ctx.written_files['/tmp/himalaya-test-tmp/email.png'])
+      -- The screenshot is written to a .work temp file then atomically renamed
+      -- onto png_path (so a concurrent read never sees a partial file).
+      assert.truthy(ctx.written_files['/tmp/himalaya-test-tmp/email.png.work'])
 
       vim.schedule = orig_schedule
       vim.base64 = orig_base64
@@ -1213,8 +1226,10 @@ describe('himalaya.domain.email.image', function()
 
       -- sends[1]: setDeviceMetricsOverride
       assert.are.equal('Emulation.setDeviceMetricsOverride', cdp_client.sends[1].method)
-      -- viewport = win_width (80) * cell_width (17) / dpr (2) = 680
-      assert.are.equal(680, cdp_client.sends[1].params.width)
+      -- viewport = display_cols (80) * cell_width (17) = 1360 at zoom 100.
+      -- (device_scale_factor no longer divides the layout width — it only
+      -- affects capture sharpness; see render_html.zoom.)
+      assert.are.equal(1360, cdp_client.sends[1].params.width)
       -- dpr stays at config value (2)
       assert.are.equal(2, cdp_client.sends[1].params.deviceScaleFactor)
 
