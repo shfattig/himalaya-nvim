@@ -1,0 +1,17 @@
+<style>
+  ::-webkit-scrollbar{display:none!important}
+  html,body{height:auto!important;min-height:0!important;margin:0!important;padding:0!important}
+</style>
+<script>
+(function() {
+  var done = false;
+  function measure() {
+    if (done) return;
+    done = true;
+    document.documentElement.setAttribute("data-sh",
+      Math.ceil(document.body.getBoundingClientRect().height));
+  }
+  window.addEventListener("load", measure);
+  setTimeout(measure, 5000);
+})();
+</script>
