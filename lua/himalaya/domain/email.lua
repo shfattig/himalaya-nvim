@@ -153,10 +153,28 @@ local function build_cli_query(filter, sort)
   if filter ~= '' then
     parts[#parts + 1] = filter
   end
-  if sort ~= '' then
+  -- 'date desc' is already `envelope list`'s native order (most recent
+  -- first) - omit the clause for it instead of spelling it out, since
+  -- some backends (Gmail) accept `envelope list` with no query at all but
+  -- reject any query argument, even a no-op "order by date desc". A
+  -- non-default sort or explicit filter still needs `envelope search`
+  -- (see envelope_list_cmd below), which such backends may reject too -
+  -- that surfaces as a clear CLI error instead of breaking every listing.
+  if sort ~= '' and sort ~= 'date desc' then
     parts[#parts + 1] = 'order by ' .. sort
   end
   return table.concat(parts, ' ')
+end
+
+--- himalaya v2 moved all filter/sort syntax out of `envelope list` and
+--- into `envelope search`'s query DSL - picks the right subcommand for a
+--- built query string, falling back to plain `list` when there's nothing
+--- to filter or sort by.
+--- @param cli_qry string
+--- @return string
+local function envelope_list_cmd(cli_qry)
+  local verb = cli_qry ~= '' and 'envelope search' or 'envelope list'
+  return verb .. ' --mailbox %q %s --page-size %d --page %d %s'
 end
 
 --- Restore cursor position after a listing re-render.
@@ -445,7 +463,7 @@ function M.list_with(account, folder, page, qry, sort)
   -- Normal fetch: doubled page size for cache priming.
   local function do_fetch(cli_page, batch_offset)
     fetch_job = request.json({
-      cmd = 'envelope list --mailbox %q %s --page-size %d --page %d %s',
+      cmd = envelope_list_cmd(cli_qry),
       unwrap = 'envelopes',
       args = { folder, acct_flag, fetch_ps, cli_page, cli_qry },
       msg = string.format('Fetching %s envelopes', folder),
@@ -474,7 +492,7 @@ function M.list_with(account, folder, page, qry, sort)
     local function search_batch(cli_page)
       local batch_offset = (cli_page - 1) * fetch_ps
       fetch_job = request.json({
-        cmd = 'envelope list --mailbox %q %s --page-size %d --page %d %s',
+        cmd = envelope_list_cmd(cli_qry),
         unwrap = 'envelopes',
         args = { folder, acct_flag, fetch_ps, cli_page, cli_qry },
         msg = string.format('Fetching %s envelopes', folder),
@@ -1155,7 +1173,7 @@ local function schedule_phase2_refetch(bufnr)
       resize_generation = resize_generation + 1
       local my_gen = resize_generation
       resize_job = request.json({
-        cmd = 'envelope list --mailbox %q %s --page-size %d --page %d %s',
+        cmd = envelope_list_cmd(resize_cli_qry),
         unwrap = 'envelopes',
         args = { folder_cur, account_flag(account), ps, cur_page, resize_cli_qry },
         msg = 'Refetching page after resize',

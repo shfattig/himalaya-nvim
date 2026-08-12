@@ -140,7 +140,10 @@ function M.poll()
   local query = vim.b[bufnr].himalaya_query or ''
 
   sync_job = request.json({
-    cmd = 'envelope list --mailbox %q %s --page-size %d --page %d %s',
+    -- himalaya v2 moved filter/sort syntax out of `envelope list` into
+    -- `envelope search`'s query DSL; `list` errors on any trailing query,
+    -- even an empty one, so only reach for `search` when query is set.
+    cmd = (query ~= '' and 'envelope search' or 'envelope list') .. ' --mailbox %q %s --page-size %d --page %d %s',
     unwrap = 'envelopes',
     args = { folder, account_flag(account), page_size, page, query },
     msg = 'Background sync',

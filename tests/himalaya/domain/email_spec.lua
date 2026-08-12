@@ -81,8 +81,15 @@ describe('himalaya.domain.email', function()
       assert.are.equal('subject hello', email._build_cli_query('subject hello', ''))
     end)
 
-    it('returns order-by only when filter is empty', function()
-      assert.are.equal('order by date desc', email._build_cli_query('', 'date desc'))
+    it('omits order-by for the default sort (date desc)', function()
+      -- `envelope list` already returns most-recent-first with no query at
+      -- all - some backends (Gmail) accept `list` bare but reject any
+      -- query argument, even a no-op "order by date desc".
+      assert.are.equal('', email._build_cli_query('', 'date desc'))
+    end)
+
+    it('returns order-by for a non-default sort', function()
+      assert.are.equal('order by date asc', email._build_cli_query('', 'date asc'))
     end)
 
     it('combines filter and sort', function()
@@ -511,24 +518,30 @@ describe('himalaya.domain.email (extended)', function()
   end)
 
   describe('list_with sort integration', function()
-    it('includes order by in CLI query', function()
+    it('includes order by in CLI query for a non-default sort, via envelope search', function()
       track(make_listing_buf({ 1 }))
-      email.list_with('acct', 'INBOX', 1, 'subject hello', 'date desc')
+      email.list_with('acct', 'INBOX', 1, 'subject hello', 'date asc')
       assert.is_not_nil(captured_json)
       -- The last arg should contain the full CLI query
       local args = captured_json.args
       local cli_qry = args[#args]
-      assert.truthy(cli_qry:find('order by date desc'))
+      assert.truthy(cli_qry:find('order by date asc'))
       assert.truthy(cli_qry:find('subject hello'))
+      assert.truthy(captured_json.cmd:find('^envelope search'))
     end)
 
-    it('defaults sort to date desc', function()
+    it('omits order by for the default sort (date desc), via plain envelope list', function()
+      -- 'date desc' is envelope list's own native order - some backends
+      -- (Gmail) accept `list` bare but reject any query, even a no-op
+      -- "order by date desc", so the default sort must produce no query
+      -- at all rather than switching to `envelope search`.
       track(make_listing_buf({ 1 }))
       email.list_with('acct', 'INBOX', 1, '')
       assert.is_not_nil(captured_json)
       local args = captured_json.args
       local cli_qry = args[#args]
-      assert.truthy(cli_qry:find('order by date desc'))
+      assert.are.equal('', cli_qry)
+      assert.truthy(captured_json.cmd:find('^envelope list'))
     end)
   end)
 
