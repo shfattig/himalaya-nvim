@@ -294,8 +294,10 @@ describe('himalaya.domain.email (extended)', function()
     local real_flags = require('himalaya.domain.email.flags')
     package.loaded['himalaya.domain.email.flags'] = {
       complete_list = function()
-        return { 'Seen', 'Flagged', 'Answered', 'Draft' }
+        return { 'seen', 'flagged', 'answered', 'draft' }
       end,
+      flag_name = real_flags.flag_name,
+      has = real_flags.has,
       is_unseen = real_flags.is_unseen,
       is_seen = real_flags.is_seen,
       count_unseen = real_flags.count_unseen,
@@ -783,7 +785,7 @@ describe('himalaya.domain.email (extended)', function()
       email.mark_seen()
       assert.is_not_nil(captured_plain)
       assert.truthy(captured_plain.cmd:find('flag add'))
-      assert.truthy(captured_plain.cmd:find('Seen'))
+      assert.truthy(captured_plain.cmd:find('%-%-flag seen'))
     end)
 
     it('on_data refreshes listing via saved_view', function()
@@ -826,7 +828,7 @@ describe('himalaya.domain.email (extended)', function()
       email.mark_unseen()
       assert.is_not_nil(captured_plain)
       assert.truthy(captured_plain.cmd:find('flag remove'))
-      assert.truthy(captured_plain.cmd:find('Seen'))
+      assert.truthy(captured_plain.cmd:find('%-%-flag seen'))
     end)
 
     it('on_data emits EmailMarkedUnseen event', function()
@@ -882,7 +884,7 @@ describe('himalaya.domain.email (extended)', function()
     it('on_data emits EmailFlagAdded event', function()
       local orig_select = vim.ui.select
       vim.ui.select = function(items, _, cb)
-        cb(items[2]) -- 'Flagged'
+        cb(items[2]) -- 'flagged'
       end
       track(make_listing_buf({ 42 }))
       vim.api.nvim_win_set_cursor(0, { 1, 0 })
@@ -895,7 +897,7 @@ describe('himalaya.domain.email (extended)', function()
           assert.are.equal('test-acct', e.data.account)
           assert.are.equal('INBOX', e.data.folder)
           assert.are.equal('42', e.data.ids)
-          assert.are.equal('Flagged', e.data.flag)
+          assert.are.equal('flagged', e.data.flag)
           found = true
         end
       end
@@ -929,7 +931,9 @@ describe('himalaya.domain.email (extended)', function()
       vim.api.nvim_win_set_cursor(0, { 1, 0 })
       email.flag_remove()
       vim.ui.select = orig_select
-      assert.are.same({ 'Seen', 'Flagged' }, picker_items)
+      -- get_current_flags() normalizes to lowercase names, matching what
+      -- --flag expects to receive back.
+      assert.are.same({ 'seen', 'flagged' }, picker_items)
       assert.is_not_nil(captured_plain)
       assert.truthy(captured_plain.cmd:find('flag remove'))
     end)
@@ -968,7 +972,7 @@ describe('himalaya.domain.email (extended)', function()
       }
       local orig_select = vim.ui.select
       vim.ui.select = function(items, _, cb)
-        cb(items[1]) -- 'Seen'
+        cb(items[1]) -- 'seen'
       end
       vim.api.nvim_win_set_cursor(0, { 1, 0 })
       email.flag_remove()
@@ -980,7 +984,7 @@ describe('himalaya.domain.email (extended)', function()
           assert.are.equal('test-acct', e.data.account)
           assert.are.equal('INBOX', e.data.folder)
           assert.are.equal('42', e.data.ids)
-          assert.are.equal('Seen', e.data.flag)
+          assert.are.equal('seen', e.data.flag)
           found = true
         end
       end

@@ -11,12 +11,14 @@ describe('himalaya.domain.email.flags', function()
   end)
 
   it('returns default flags', function()
+    -- Lowercase, matching himalaya v2's `--flag <FLAG>` values - 'deleted'
+    -- isn't one of them, so it's not in the list.
     local result = flags.complete_list()
-    assert.is_truthy(vim.tbl_contains(result, 'Seen'))
-    assert.is_truthy(vim.tbl_contains(result, 'Answered'))
-    assert.is_truthy(vim.tbl_contains(result, 'Flagged'))
-    assert.is_truthy(vim.tbl_contains(result, 'Deleted'))
-    assert.is_truthy(vim.tbl_contains(result, 'Draft'))
+    assert.is_truthy(vim.tbl_contains(result, 'seen'))
+    assert.is_truthy(vim.tbl_contains(result, 'answered'))
+    assert.is_truthy(vim.tbl_contains(result, 'flagged'))
+    assert.is_truthy(vim.tbl_contains(result, 'draft'))
+    assert.is_falsy(vim.tbl_contains(result, 'deleted'))
   end)
 
   it('includes custom flags from config', function()
@@ -24,7 +26,7 @@ describe('himalaya.domain.email.flags', function()
     local result = flags.complete_list()
     assert.is_truthy(vim.tbl_contains(result, 'Important'))
     assert.is_truthy(vim.tbl_contains(result, 'Urgent'))
-    assert.is_truthy(vim.tbl_contains(result, 'Seen'))
+    assert.is_truthy(vim.tbl_contains(result, 'seen'))
   end)
 
   describe('is_unseen', function()
@@ -42,6 +44,46 @@ describe('himalaya.domain.email.flags', function()
 
     it('returns false when Seen is among multiple flags', function()
       assert.is_false(flags.is_unseen({ flags = { 'Answered', 'Seen', 'Flagged' } }))
+    end)
+
+    -- himalaya v2 returns each flags-array entry as {raw = "\\Seen", iana =
+    -- "seen"}, not a bare string - confirmed against a real Gmail account.
+    -- A bare-string comparison here would silently treat every message as
+    -- unseen forever, which is exactly what shipped before this test.
+    it('returns false when Seen is present as a real v2 {raw, iana} table', function()
+      assert.is_false(flags.is_unseen({ flags = { { raw = '\\Seen', iana = 'seen' } } }))
+    end)
+
+    it('returns true when only non-Seen v2 {raw, iana} tables are present', function()
+      assert.is_true(flags.is_unseen({ flags = { { raw = '\\Answered', iana = 'answered' } } }))
+    end)
+  end)
+
+  describe('flag_name', function()
+    it('passes bare strings through lowercased', function()
+      assert.are.equal('seen', flags.flag_name('Seen'))
+    end)
+
+    it('extracts and lowercases the iana name from a v2 {raw, iana} table', function()
+      assert.are.equal('seen', flags.flag_name({ raw = '\\Seen', iana = 'seen' }))
+    end)
+
+    it('falls back to a stripped, lowercased raw name when iana is absent', function()
+      assert.are.equal('seen', flags.flag_name({ raw = '\\Seen' }))
+    end)
+  end)
+
+  describe('has', function()
+    it('finds a flag among mixed bare-string and v2 table entries', function()
+      local mixed = { 'Answered', { raw = '\\Seen', iana = 'seen' } }
+      assert.is_true(flags.has(mixed, 'seen'))
+      assert.is_true(flags.has(mixed, 'ANSWERED'))
+      assert.is_false(flags.has(mixed, 'flagged'))
+    end)
+
+    it('returns false for nil or empty flags', function()
+      assert.is_false(flags.has(nil, 'seen'))
+      assert.is_false(flags.has({}, 'seen'))
     end)
   end)
 

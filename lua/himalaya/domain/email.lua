@@ -571,10 +571,8 @@ local function mark_envelope_seen(email_id)
   for _, env in ipairs(envelopes) do
     if tostring(env.id) == eid then
       local flags = env.flags or {}
-      for _, f in ipairs(flags) do
-        if f == 'Seen' then
-          return
-        end
+      if flags_util.has(flags, 'seen') then
+        return
       end
       table.insert(flags, 'Seen')
       env.flags = flags
@@ -908,7 +906,14 @@ local function get_current_flags()
   local id = get_email_id_under_cursor()
   for _, env in ipairs(envelopes) do
     if tostring(env.id) == id then
-      return env.flags or {}
+      -- Normalize himalaya v2's {raw, iana} flag tables (and any bare
+      -- strings) to plain lowercase names, matching what vim.ui.select
+      -- needs to display and what --flag expects to receive back.
+      local names = {}
+      for _, f in ipairs(env.flags or {}) do
+        names[#names + 1] = flags_util.flag_name(f)
+      end
+      return names
     end
   end
   return {}
@@ -930,8 +935,10 @@ function M.flag_add(first_line, last_line)
     local account, folder = context.resolve()
     probe.cancel(function()
       request.plain({
-        cmd = 'flag add %s --mailbox %q %s %s',
-        args = { account_flag(account), folder, flag, ids },
+        -- himalaya v2 requires the flag as a `--flag` option, not a bare
+        -- positional; lowercase since --flag's values are lowercase.
+        cmd = 'flag add %s --mailbox %q --flag %s %s',
+        args = { account_flag(account), folder, flag:lower(), ids },
         msg = 'Adding flag: ' .. flag,
         on_data = function()
           require('himalaya.events').emit('EmailFlagAdded', {
@@ -964,8 +971,10 @@ function M.flag_remove(first_line, last_line)
     local account, folder = context.resolve()
     probe.cancel(function()
       request.plain({
-        cmd = 'flag remove %s --mailbox %q %s %s',
-        args = { account_flag(account), folder, flag, ids },
+        -- himalaya v2 requires the flag as a `--flag` option, not a bare
+        -- positional; lowercase since --flag's values are lowercase.
+        cmd = 'flag remove %s --mailbox %q --flag %s %s',
+        args = { account_flag(account), folder, flag:lower(), ids },
         msg = 'Removing flag: ' .. flag,
         on_data = function()
           require('himalaya.events').emit('EmailFlagRemoved', {
@@ -991,7 +1000,7 @@ function M.mark_seen(first_line, last_line)
   local account, folder = context.resolve()
   probe.cancel(function()
     request.plain({
-      cmd = 'flag add %s --mailbox %q Seen %s',
+      cmd = 'flag add %s --mailbox %q --flag seen %s',
       args = { account_flag(account), folder, ids },
       msg = 'Marking as seen',
       on_data = function()
@@ -1017,7 +1026,7 @@ function M.mark_unseen(first_line, last_line)
   local account, folder = context.resolve()
   probe.cancel(function()
     request.plain({
-      cmd = 'flag remove %s --mailbox %q Seen %s',
+      cmd = 'flag remove %s --mailbox %q --flag seen %s',
       args = { account_flag(account), folder, ids },
       msg = 'Marking as unseen',
       on_data = function()

@@ -468,10 +468,8 @@ function M.mark_seen_optimistic(email_id)
   if idx then
     local row = all_display_rows[idx]
     local flags = row.env.flags or {}
-    for _, f in ipairs(flags) do
-      if f == 'Seen' then
-        return
-      end
+    if flags_util.has(flags, 'seen') then
+      return
     end
     table.insert(flags, 'Seen')
     row.env.flags = flags

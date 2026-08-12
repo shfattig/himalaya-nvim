@@ -210,12 +210,19 @@ function M.send(bufnr)
         reply_id = reply_id,
       })
 
-      -- Add "answered" flag only for replies
+      -- Add "answered" flag only for replies. Best-effort and silent:
+      -- confirmed against a real Gmail account that its backend has no
+      -- \Answered-equivalent label at all (unlike seen/flagged, which map
+      -- to Gmail's own read/starred state) - `flag add --flag answered`
+      -- fails outright there every time, regardless of syntax. The reply
+      -- itself already sent successfully by this point, so a failure here
+      -- shouldn't be surfaced as if the reply failed.
       if reply_id and reply_id ~= '' then
         request.plain({
-          cmd = 'flag add %s --mailbox %q answered %s',
+          cmd = 'flag add %s --mailbox %q --flag answered %s',
           args = { account_flag(account), folder, reply_id },
           msg = 'Adding answered flag',
+          silent = true,
         })
       end
     end,

@@ -1,5 +1,6 @@
 local config = require('himalaya.config')
 local perf = require('himalaya.perf')
+local flags_util = require('himalaya.domain.email.flags')
 
 local M = {}
 
@@ -13,19 +14,9 @@ M.FLAG_ORDER = FLAG_ORDER
 function M.format_flags(envelope, cfg)
   local cfg_flags = (cfg or config.get()).flags
   local raw = envelope.flags or {}
-  local seen, answered, flagged = false, false, false
-
-  for _, f in ipairs(raw) do
-    if f == 'Seen' then
-      seen = true
-    end
-    if f == 'Answered' then
-      answered = true
-    end
-    if f == 'Flagged' then
-      flagged = true
-    end
-  end
+  local seen = flags_util.has(raw, 'seen')
+  local answered = flags_util.has(raw, 'answered')
+  local flagged = flags_util.has(raw, 'flagged')
 
   local active = {
     flagged = flagged,
@@ -56,19 +47,9 @@ end
 function M.format_flags_compact(envelope, cfg)
   local cfg_flags = (cfg or config.get()).flags
   local raw = envelope.flags or {}
-  local seen, answered, flagged = false, false, false
-
-  for _, f in ipairs(raw) do
-    if f == 'Seen' then
-      seen = true
-    end
-    if f == 'Answered' then
-      answered = true
-    end
-    if f == 'Flagged' then
-      flagged = true
-    end
-  end
+  local seen = flags_util.has(raw, 'seen')
+  local answered = flags_util.has(raw, 'answered')
+  local flagged = flags_util.has(raw, 'flagged')
 
   local active = {
     flagged = flagged,

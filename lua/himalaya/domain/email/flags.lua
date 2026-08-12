@@ -2,12 +2,40 @@ local config = require('himalaya.config')
 
 local M = {}
 
-local default_flags = { 'Seen', 'Answered', 'Flagged', 'Deleted', 'Draft' }
+-- Lowercase, matching both `himalaya flag add/remove --flag <FLAG>`'s
+-- possible values and the `envelope search` query DSL's `flag <...>`
+-- keyword. ('deleted' isn't a valid --flag value in v2, so it's dropped
+-- from the old v1-era list this replaced.)
+local default_flags = { 'seen', 'answered', 'flagged', 'draft' }
 
 function M.complete_list()
   local cfg = config.get()
   local all = vim.list_extend(vim.deepcopy(default_flags), cfg.custom_flags)
   return all
+end
+
+--- Normalize one flags-array entry to a lowercase name, whether it's a
+--- bare string (older responses / simple test fixtures) or himalaya v2's
+--- real `{raw = "\\Seen", iana = "seen"}` table shape.
+--- @param entry string|table
+--- @return string
+function M.flag_name(entry)
+  local name = type(entry) == 'table' and (entry.iana or entry.raw or '') or entry
+  return (name:gsub('^\\', '')):lower()
+end
+
+--- Case-insensitively check whether a flags array contains the given name.
+--- @param flags table[]|string[]
+--- @param name string
+--- @return boolean
+function M.has(flags, name)
+  name = name:lower()
+  for _, f in ipairs(flags or {}) do
+    if M.flag_name(f) == name then
+      return true
+    end
+  end
+  return false
 end
 
 --- Check whether an envelope is confirmed unseen (has flags but no Seen flag).
@@ -19,12 +47,7 @@ function M.is_unseen(env)
   if not flags then
     return false
   end
-  for _, f in ipairs(flags) do
-    if f == 'Seen' then
-      return false
-    end
-  end
-  return true
+  return not M.has(flags, 'seen')
 end
 
 --- Check whether an envelope has the Seen flag.
@@ -73,14 +96,7 @@ function M.debug_flags(label, envelopes)
     if not env.flags then
       nil_flags = nil_flags + 1
     else
-      local has_seen = false
-      for _, f in ipairs(env.flags) do
-        if f == 'Seen' then
-          has_seen = true
-          break
-        end
-      end
-      if has_seen then
+      if M.has(env.flags, 'seen') then
         seen = seen + 1
       else
         unseen = unseen + 1

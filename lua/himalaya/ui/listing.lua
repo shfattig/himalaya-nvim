@@ -4,6 +4,7 @@ local folder = require('himalaya.domain.folder')
 local probe = require('himalaya.domain.email.probe')
 local perf = require('himalaya.perf')
 local win = require('himalaya.ui.win')
+local flags_util = require('himalaya.domain.email.flags')
 
 local M = {}
 
@@ -154,13 +155,7 @@ function M.apply_highlights(bufnr, envelopes, opts)
     local env = envelopes[i]
     local flags = env and env.flags
     if flags then
-      local seen = false
-      for _, f in ipairs(flags) do
-        if f == 'Seen' then
-          seen = true
-          break
-        end
-      end
+      local seen = flags_util.has(flags, 'seen')
       if not seen then
         local ranges = {}
         ranges[1] = { 0, seps[1][1] }
