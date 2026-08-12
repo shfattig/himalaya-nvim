@@ -83,7 +83,8 @@ local function run_probe(acct_flag, folder, page_size, probe_page, qry, bufnr, u
   local my_gen = generation
   saved_args = { acct_flag, folder, page_size, probe_page, qry, bufnr, upper_bound }
   job = request.json({
-    cmd = 'envelope list --folder %q %s --page-size %d --page %d %s',
+    cmd = 'envelope list --mailbox %q %s --page-size %d --page %d %s',
+    unwrap = 'envelopes',
     args = {
       folder,
       acct_flag,

@@ -54,7 +54,7 @@ describe('himalaya.state.account', function()
       -- Trigger a refresh
       account.list()
       -- Simulate async completion
-      local json = vim.json.encode({ { name = 'work' }, { name = 'personal' } })
+      local json = vim.json.encode({ accounts = { { name = 'work' }, { name = 'personal' } } })
       job_run_calls[1].opts.on_exit(json, '', 0)
 
       local result = account.list()
@@ -64,7 +64,7 @@ describe('himalaya.state.account', function()
     it('triggers background refresh when cache is stale', function()
       -- Warm the cache
       account.list()
-      local json = vim.json.encode({ { name = 'A' } })
+      local json = vim.json.encode({ accounts = { { name = 'A' } } })
       job_run_calls[1].opts.on_exit(json, '', 0)
 
       -- Expire the cache by stubbing vim.uv.now
@@ -82,7 +82,7 @@ describe('himalaya.state.account', function()
     it('returns stale cached data while refresh is in flight', function()
       -- Warm the cache
       account.list()
-      local json = vim.json.encode({ { name = 'A' } })
+      local json = vim.json.encode({ accounts = { { name = 'A' } } })
       job_run_calls[1].opts.on_exit(json, '', 0)
 
       -- Expire the cache
@@ -102,7 +102,7 @@ describe('himalaya.state.account', function()
     it('calls callback with cached data when fresh', function()
       -- Warm the cache
       account.list()
-      local json = vim.json.encode({ { name = 'X' }, { name = 'Y' } })
+      local json = vim.json.encode({ accounts = { { name = 'X' }, { name = 'Y' } } })
       job_run_calls[1].opts.on_exit(json, '', 0)
 
       local received
@@ -122,7 +122,7 @@ describe('himalaya.state.account', function()
       assert.is_nil(received)
 
       -- Simulate completion
-      local json = vim.json.encode({ { name = 'Z' } })
+      local json = vim.json.encode({ accounts = { { name = 'Z' } } })
       job_run_calls[1].opts.on_exit(json, '', 0)
       assert.are.same({ 'Z' }, received)
     end)
@@ -137,7 +137,7 @@ describe('himalaya.state.account', function()
     it('does not trigger refresh if cache already exists', function()
       -- Warm the cache first
       account.warmup()
-      local json = vim.json.encode({ { name = 'A' } })
+      local json = vim.json.encode({ accounts = { { name = 'A' } } })
       job_run_calls[1].opts.on_exit(json, '', 0)
 
       account.warmup()
@@ -158,8 +158,10 @@ describe('himalaya.state.account', function()
     it('sets default account from default entry on first load', function()
       account.list()
       local json = vim.json.encode({
-        { name = 'personal' },
-        { name = 'work', default = true },
+        accounts = {
+          { name = 'personal' },
+          { name = 'work', default = true },
+        },
       })
       job_run_calls[1].opts.on_exit(json, '', 0)
       assert.are.equal('work', account.default())
@@ -172,8 +174,10 @@ describe('himalaya.state.account', function()
     it('does not change default after subsequent refreshes', function()
       account.list()
       local json = vim.json.encode({
-        { name = 'personal' },
-        { name = 'work', default = true },
+        accounts = {
+          { name = 'personal' },
+          { name = 'work', default = true },
+        },
       })
       job_run_calls[1].opts.on_exit(json, '', 0)
       assert.are.equal('work', account.default())
@@ -186,8 +190,10 @@ describe('himalaya.state.account', function()
 
       account.list()
       local json2 = vim.json.encode({
-        { name = 'personal', default = true },
-        { name = 'work' },
+        accounts = {
+          { name = 'personal', default = true },
+          { name = 'work' },
+        },
       })
       job_run_calls[2].opts.on_exit(json2, '', 0)
       -- default_account should not change once set
@@ -256,7 +262,7 @@ describe('himalaya.state.account', function()
     it('preserves existing cache on failed refresh', function()
       -- Warm the cache
       account.list()
-      local json = vim.json.encode({ { name = 'A' } })
+      local json = vim.json.encode({ accounts = { { name = 'A' } } })
       job_run_calls[1].opts.on_exit(json, '', 0)
 
       -- Expire the cache

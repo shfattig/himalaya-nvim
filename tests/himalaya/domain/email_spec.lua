@@ -543,19 +543,23 @@ describe('himalaya.domain.email (extended)', function()
   end)
 
   describe('delete', function()
-    it('sends delete command for cursor line', function()
+    -- himalaya v2 has no `message delete` - deleting moves to the
+    -- configured trash mailbox instead (see M.delete / config.trash_mailbox).
+    it('sends a move-to-trash command for cursor line', function()
       track(make_listing_buf({ 42, 43 }))
       vim.api.nvim_win_set_cursor(0, { 1, 0 })
       email.delete()
       assert.is_not_nil(captured_plain)
-      assert.truthy(captured_plain.cmd:find('message delete'))
+      assert.truthy(captured_plain.cmd:find('message move'))
+      assert.are.equal('trash', captured_plain.args[3])
     end)
 
-    it('sends delete command for visual range', function()
+    it('sends a move-to-trash command for visual range', function()
       track(make_listing_buf({ 10, 20, 30 }))
       email.delete(1, 3)
       assert.is_not_nil(captured_plain)
-      assert.truthy(captured_plain.cmd:find('message delete'))
+      assert.truthy(captured_plain.cmd:find('message move'))
+      assert.are.equal('trash', captured_plain.args[3])
     end)
 
     it('prompts for confirmation when always_confirm=true', function()
@@ -1002,22 +1006,22 @@ describe('himalaya.domain.email (extended)', function()
   end)
 
   describe('open_browser', function()
-    it('sends export command', function()
+    -- himalaya v2 removed `message export` outright (not renamed), so
+    -- there's nothing left to shell out to - see the comment on
+    -- M.open_browser. This should fail loudly, not send any CLI command.
+    it('logs an error instead of sending a CLI command', function()
       track(make_listing_buf({ 42 }))
       vim.api.nvim_win_set_cursor(0, { 1, 0 })
-      email.open_browser()
-      assert.is_not_nil(captured_plain)
-      assert.truthy(captured_plain.cmd:find('message export'))
-    end)
-
-    it('on_data logs output', function()
-      track(make_listing_buf({ 42 }))
-      vim.api.nvim_win_set_cursor(0, { 1, 0 })
-      email.open_browser()
+      local notified
       local orig = vim.notify
-      vim.notify = function() end
-      captured_plain.on_data('Opened in browser')
+      vim.notify = function(msg, level)
+        notified = { msg = msg, level = level }
+      end
+      email.open_browser()
       vim.notify = orig
+      assert.is_nil(captured_plain)
+      assert.is_not_nil(notified)
+      assert.are.equal(vim.log.levels.ERROR, notified.level)
     end)
   end)
 

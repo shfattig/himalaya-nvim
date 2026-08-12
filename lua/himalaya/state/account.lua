@@ -14,7 +14,8 @@ end
 
 local function build_cmd()
   local cfg = config.get()
-  local cmd = { cfg.executable, '--output', 'json', 'account', 'list' }
+  -- himalaya v2 dropped `--output json` for a global boolean `--json` flag.
+  local cmd = { cfg.executable, '--json', 'account', 'list' }
   if cfg.config_path then
     table.insert(cmd, 2, '--config')
     table.insert(cmd, 3, cfg.config_path)
@@ -26,10 +27,12 @@ local function parse_result(stdout, code)
   if code ~= 0 then
     return nil
   end
-  local ok, entries = pcall(vim.json.decode, stdout)
-  if not ok or type(entries) ~= 'table' then
+  local ok, decoded = pcall(vim.json.decode, stdout)
+  if not ok or type(decoded) ~= 'table' then
     return nil
   end
+  -- himalaya v2 wraps the array as {"accounts": [...]} instead of bare.
+  local entries = decoded.accounts or {}
   local names = {}
   local default_name = nil
   for _, entry in ipairs(entries) do

@@ -192,7 +192,8 @@ describe('himalaya.domain.folder (extended)', function()
     it('fetches folders via request.json on cache miss', function()
       folder_domain.open_picker(function() end)
       assert.is_not_nil(captured_json)
-      assert.is_truthy(captured_json.cmd:find('folder list'))
+      assert.is_truthy(captured_json.cmd:find('mailbox list'))
+      assert.are.equal('mailboxes', captured_json.unwrap)
 
       -- Simulate server response
       captured_json.on_data({

@@ -58,8 +58,11 @@ function M.open_picker(callback)
   end
 
   request.json({
-    cmd = 'folder list %s',
+    -- himalaya v2 renamed `folder` to `mailbox` (unwrap pulls the bare
+    -- array back out of the {"mailboxes": [...]} response shape).
+    cmd = 'mailbox list %s',
     args = { account_flag(account) },
+    unwrap = 'mailboxes',
     msg = 'Listing folders',
     on_data = function(data)
       folder_cache[account] = { data = data, ts = vim.uv.now() }

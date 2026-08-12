@@ -45,7 +45,7 @@ function M.prefetch(bufnr, account, folder, email_id)
   prefetch_state[bufnr] = state
 
   local cmd = request._build_cmd(
-    'message export %s --folder %q -d %q %s',
+    'message export %s --mailbox %q -d %q %s',
     { account_state.flag(account), folder, tmpdir, email_id },
     'plain'
   )
@@ -2531,13 +2531,25 @@ function M.render()
     plog('no pre-fetch, starting fresh export')
     local tmpdir = vim.fn.tempname()
     vim.fn.mkdir(tmpdir, 'p')
+    -- himalaya v2 removed `message export` entirely (not renamed - the
+    -- `message` subcommand list is add/compose/copy/forward/move/read/
+    -- reply/send, no export), so HTML rendering has no CLI to fetch from
+    -- right now. This always fails until that's reimplemented (e.g. pulling
+    -- the HTML part out of `message read --json`'s MIME structure and
+    -- writing it to tmpdir directly instead of shelling out for it).
+    -- on_error wasn't previously set here at all, so this used to fail
+    -- completely silently - not just against the current CLI, against any
+    -- export failure.
     request.plain({
-      cmd = 'message export %s --folder %q -d %q %s',
+      cmd = 'message export %s --mailbox %q -d %q %s',
       args = { account_flag, folder, tmpdir, email_id },
       msg = 'Exporting email HTML',
       on_data = function()
         plog('himalaya export done')
         do_render(tmpdir)
+      end,
+      on_error = function()
+        log.err('HTML rendering is unavailable: himalaya v2 removed `message export`, no CLI replacement exists yet')
       end,
     })
   end

@@ -445,7 +445,8 @@ function M.list_with(account, folder, page, qry, sort)
   -- Normal fetch: doubled page size for cache priming.
   local function do_fetch(cli_page, batch_offset)
     fetch_job = request.json({
-      cmd = 'envelope list --folder %q %s --page-size %d --page %d %s',
+      cmd = 'envelope list --mailbox %q %s --page-size %d --page %d %s',
+      unwrap = 'envelopes',
       args = { folder, acct_flag, fetch_ps, cli_page, cli_qry },
       msg = string.format('Fetching %s envelopes', folder),
       is_stale = function()
@@ -473,7 +474,8 @@ function M.list_with(account, folder, page, qry, sort)
     local function search_batch(cli_page)
       local batch_offset = (cli_page - 1) * fetch_ps
       fetch_job = request.json({
-        cmd = 'envelope list --folder %q %s --page-size %d --page %d %s',
+        cmd = 'envelope list --mailbox %q %s --page-size %d --page %d %s',
+        unwrap = 'envelopes',
         args = { folder, acct_flag, fetch_ps, cli_page, cli_qry },
         msg = string.format('Fetching %s envelopes', folder),
         is_stale = function()
@@ -608,7 +610,7 @@ function M.read()
   probe.cancel(function()
     plog('probe cancelled, starting fetch')
     request.plain({
-      cmd = 'message read %s --folder %q %s',
+      cmd = 'message read %s --mailbox %q %s',
       args = { account_flag(account), folder, current_id },
       msg = string.format('Fetching email %s', current_id),
       on_error = function()
@@ -749,8 +751,9 @@ function M.delete(first_line, last_line)
   local account, folder = context.resolve()
   probe.cancel(function()
     request.plain({
-      cmd = 'message delete %s --folder %q %s',
-      args = { account_flag(account), folder, ids },
+      -- himalaya v2 has no `message delete` - deleting is moving to trash.
+      cmd = 'message move %s --from %q --to %q %s',
+      args = { account_flag(account), folder, cfg.trash_mailbox, ids },
       msg = 'Deleting email',
       on_data = function()
         require('himalaya.events').emit('EmailDeleted', {
@@ -779,7 +782,9 @@ function M.copy(target_folder, first_line, last_line)
   local account, folder = context.resolve()
   probe.cancel(function()
     request.plain({
-      cmd = 'message copy %s --folder %q %q %s',
+      -- himalaya v2's message copy/move take distinct --from/--to mailbox
+      -- flags instead of two positional --folder occurrences.
+      cmd = 'message copy %s --from %q --to %q %s',
       args = {
         account_flag(account),
         folder,
@@ -828,7 +833,7 @@ function M.move(target_folder, first_line, last_line)
   local account, folder = context.resolve()
   probe.cancel(function()
     request.plain({
-      cmd = 'message move %s --folder %q %q %s',
+      cmd = 'message move %s --from %q --to %q %s',
       args = {
         account_flag(account),
         folder,
@@ -907,7 +912,7 @@ function M.flag_add(first_line, last_line)
     local account, folder = context.resolve()
     probe.cancel(function()
       request.plain({
-        cmd = 'flag add %s --folder %q %s %s',
+        cmd = 'flag add %s --mailbox %q %s %s',
         args = { account_flag(account), folder, flag, ids },
         msg = 'Adding flag: ' .. flag,
         on_data = function()
@@ -941,7 +946,7 @@ function M.flag_remove(first_line, last_line)
     local account, folder = context.resolve()
     probe.cancel(function()
       request.plain({
-        cmd = 'flag remove %s --folder %q %s %s',
+        cmd = 'flag remove %s --mailbox %q %s %s',
         args = { account_flag(account), folder, flag, ids },
         msg = 'Removing flag: ' .. flag,
         on_data = function()
@@ -968,7 +973,7 @@ function M.mark_seen(first_line, last_line)
   local account, folder = context.resolve()
   probe.cancel(function()
     request.plain({
-      cmd = 'flag add %s --folder %q Seen %s',
+      cmd = 'flag add %s --mailbox %q Seen %s',
       args = { account_flag(account), folder, ids },
       msg = 'Marking as seen',
       on_data = function()
@@ -994,7 +999,7 @@ function M.mark_unseen(first_line, last_line)
   local account, folder = context.resolve()
   probe.cancel(function()
     request.plain({
-      cmd = 'flag remove %s --folder %q Seen %s',
+      cmd = 'flag remove %s --mailbox %q Seen %s',
       args = { account_flag(account), folder, ids },
       msg = 'Marking as unseen',
       on_data = function()
@@ -1016,7 +1021,7 @@ function M.download_attachments()
   local account, folder = context.resolve()
   local id = M.context_email_id()
   request.plain({
-    cmd = 'attachment download %s --folder %q %s',
+    cmd = 'attachment download %s --mailbox %q %s',
     args = { account_flag(account), folder, id },
     msg = 'Downloading attachments',
     on_data = function(data)
@@ -1031,17 +1036,13 @@ function M.download_attachments()
 end
 
 --- Open current email in browser.
+-- himalaya v2 removed `message export` entirely (not renamed - the
+-- `message` subcommand list is add/compose/copy/forward/move/read/reply/
+-- send, no export), so there's no CLI-level replacement to shell out to
+-- right now. Failing loudly here instead of silently no-oping or passing
+-- an invalid command through to a confusing CLI parse error.
 function M.open_browser()
-  local context = require('himalaya.state.context')
-  local account, folder = context.resolve()
-  request.plain({
-    cmd = 'message export %s --folder %q --open %s',
-    args = { account_flag(account), folder, M.context_email_id() },
-    msg = 'Opening message in the browser',
-    on_data = function(data)
-      log.info(data)
-    end,
-  })
+  log.err('Opening in browser is unavailable: himalaya v2 removed `message export`, no CLI replacement exists yet')
 end
 
 --- Contact completion for omnifunc.
@@ -1154,7 +1155,8 @@ local function schedule_phase2_refetch(bufnr)
       resize_generation = resize_generation + 1
       local my_gen = resize_generation
       resize_job = request.json({
-        cmd = 'envelope list --folder %q %s --page-size %d --page %d %s',
+        cmd = 'envelope list --mailbox %q %s --page-size %d --page %d %s',
+        unwrap = 'envelopes',
         args = { folder_cur, account_flag(account), ps, cur_page, resize_cli_qry },
         msg = 'Refetching page after resize',
         silent = true,

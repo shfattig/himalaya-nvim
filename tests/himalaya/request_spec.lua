@@ -39,6 +39,47 @@ describe('himalaya.request', function()
       assert.are.same({ { id = 1 } }, result)
     end)
 
+    it('unwraps a named key when opts.unwrap is set', function()
+      local result
+      request.json({
+        cmd = 'mailbox list',
+        msg = 'test',
+        unwrap = 'mailboxes',
+        on_data = function(data)
+          result = data
+        end,
+      })
+      captured_on_exit('{"mailboxes":[{"name":"INBOX"}]}', '', 0)
+      assert.are.same({ { name = 'INBOX' } }, result)
+    end)
+
+    it('unwraps to empty table when the key is absent', function()
+      local result
+      request.json({
+        cmd = 'mailbox list',
+        msg = 'test',
+        unwrap = 'mailboxes',
+        on_data = function(data)
+          result = data
+        end,
+      })
+      captured_on_exit('{"other":[]}', '', 0)
+      assert.are.same({}, result)
+    end)
+
+    it('returns the raw table unchanged when opts.unwrap is not set', function()
+      local result
+      request.json({
+        cmd = 'envelope list',
+        msg = 'test',
+        on_data = function(data)
+          result = data
+        end,
+      })
+      captured_on_exit('{"envelopes":[{"id":1}]}', '', 0)
+      assert.are.same({ envelopes = { { id = 1 } } }, result)
+    end)
+
     it('returns empty table for blank stdout', function()
       local result
       request.json({
@@ -133,18 +174,28 @@ describe('himalaya.request', function()
 
   describe('build_cmd', function()
     it('builds a basic command with json output', function()
-      local cmd = request._build_cmd('envelope list --folder %q', { 'INBOX' }, 'json')
+      local cmd = request._build_cmd('envelope list --mailbox %q', { 'INBOX' }, 'json')
       assert.are.equal(cmd[1], 'himalaya')
-      assert.is_truthy(vim.tbl_contains(cmd, '--output'))
-      assert.is_truthy(vim.tbl_contains(cmd, 'json'))
+      assert.is_truthy(vim.tbl_contains(cmd, '--json'))
+      assert.is_falsy(vim.tbl_contains(cmd, '--output'))
       local joined = table.concat(cmd, ' ')
       assert.is_truthy(joined:match('envelope'))
       assert.is_truthy(joined:match('INBOX'))
     end)
 
+    it('builds a plain command with no output flag at all', function()
+      -- himalaya v2's plain text is just the default when --json is
+      -- omitted - there's no `--output plain` equivalent anymore.
+      local cmd = request._build_cmd('envelope list --mailbox %q', { 'INBOX' }, 'plain')
+      assert.are.equal(cmd[1], 'himalaya')
+      assert.is_falsy(vim.tbl_contains(cmd, '--output'))
+      assert.is_falsy(vim.tbl_contains(cmd, '--json'))
+      assert.is_falsy(vim.tbl_contains(cmd, 'plain'))
+    end)
+
     it('keeps %%q args as single tokens (folder names with spaces)', function()
       local cmd =
-        request._build_cmd('envelope list --folder %q %s', { '[Gmail]/All Mail', { '--account', 'work' } }, 'json')
+        request._build_cmd('envelope list --mailbox %q %s', { '[Gmail]/All Mail', { '--account', 'work' } }, 'json')
       -- folder should be a single token, not split by space
       assert.is_truthy(vim.tbl_contains(cmd, '[Gmail]/All Mail'))
       -- account flag table should produce separate tokens
@@ -154,7 +205,7 @@ describe('himalaya.request', function()
 
     it('keeps account names with spaces as single tokens via %%s table arg', function()
       local cmd =
-        request._build_cmd('envelope list --folder %q %s', { 'INBOX', { '--account', 'My Work Email' } }, 'json')
+        request._build_cmd('envelope list --mailbox %q %s', { 'INBOX', { '--account', 'My Work Email' } }, 'json')
       assert.is_truthy(vim.tbl_contains(cmd, '--account'))
       assert.is_truthy(vim.tbl_contains(cmd, 'My Work Email'))
       -- Must NOT contain split fragments
@@ -164,7 +215,7 @@ describe('himalaya.request', function()
     end)
 
     it('handles empty table arg for %%s (no account flag)', function()
-      local cmd = request._build_cmd('folder list %s', { {} }, 'json')
+      local cmd = request._build_cmd('mailbox list %s', { {} }, 'json')
       assert.is_falsy(vim.tbl_contains(cmd, '--account'))
       -- No empty strings should appear
       local count = 0
@@ -183,7 +234,7 @@ describe('himalaya.request', function()
     end)
 
     it('skips empty %%s and %%q args', function()
-      local cmd = request._build_cmd('envelope list --folder %q %s', { 'INBOX', '' }, 'json')
+      local cmd = request._build_cmd('envelope list --mailbox %q %s', { 'INBOX', '' }, 'json')
       assert.is_truthy(vim.tbl_contains(cmd, 'INBOX'))
       -- empty string should not appear as a token
       local count = 0
@@ -197,7 +248,7 @@ describe('himalaya.request', function()
 
     it('prepends --config when config_path is set', function()
       config.setup({ config_path = '/tmp/himalaya.toml' })
-      local cmd = request._build_cmd('folder list', {}, 'json')
+      local cmd = request._build_cmd('mailbox list', {}, 'json')
       local joined = table.concat(cmd, ' ')
       assert.is_truthy(joined:match('--config'))
       assert.is_truthy(joined:match('/tmp/himalaya.toml'))
@@ -205,7 +256,7 @@ describe('himalaya.request', function()
 
     it('uses custom executable', function()
       config.setup({ executable = '/usr/local/bin/himalaya' })
-      local cmd = request._build_cmd('folder list', {}, 'json')
+      local cmd = request._build_cmd('mailbox list', {}, 'json')
       assert.are.equal('/usr/local/bin/himalaya', cmd[1])
     end)
   end)
@@ -228,7 +279,7 @@ describe('himalaya.request', function()
     it('calls on_data with raw stdout on success', function()
       local result
       request.plain({
-        cmd = 'folder list',
+        cmd = 'mailbox list',
         msg = 'test',
         on_data = function(data)
           result = data
@@ -241,7 +292,7 @@ describe('himalaya.request', function()
     it('calls on_error on non-zero exit code', function()
       local errored = false
       request.plain({
-        cmd = 'folder list',
+        cmd = 'mailbox list',
         msg = 'test',
         silent = true,
         on_data = function() end,

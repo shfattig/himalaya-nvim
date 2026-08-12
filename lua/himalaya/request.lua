@@ -6,7 +6,9 @@ local M = {}
 
 function M._build_cmd(cmd_fmt, args, output_mode)
   local cfg = config.get()
-  local parts = { cfg.executable, '--output', output_mode }
+  -- himalaya v2 dropped `--output <mode>` for a global boolean `--json`
+  -- flag; plain-text is just the default when it's omitted, no flag for it.
+  local parts = output_mode == 'json' and { cfg.executable, '--json' } or { cfg.executable }
 
   if cfg.config_path then
     table.insert(parts, '--config')
@@ -151,6 +153,16 @@ function M.json(opts)
           log.err('Failed to parse JSON: ' .. stdout)
         end
         return nil
+      end
+      -- himalaya v2 wraps list responses under a named key ({"envelopes":
+      -- [...]}, {"mailboxes": [...]}, {"accounts": [...]}) instead of
+      -- returning the array bare. Callers declare which key via
+      -- opts.unwrap so every on_data handler can keep working with a
+      -- plain array, same as before this changed upstream. Mock mode
+      -- (mock.lua) already hands back bare arrays directly and never
+      -- reaches this code path, so it needs no matching change.
+      if opts.unwrap then
+        return data[opts.unwrap] or {}
       end
       return data
     end),

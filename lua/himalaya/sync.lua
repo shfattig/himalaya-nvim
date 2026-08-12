@@ -126,146 +126,79 @@ function M.poll()
   local account_flag = require('himalaya.state.account').flag
 
   if buf_type == 'thread-listing' then
-    -- Thread mode: re-fetch thread edges
-    local query = vim.b[bufnr].himalaya_query or ''
-    sync_job = request.json({
-      cmd = 'envelope thread --folder %q %s %s',
-      args = { folder, account_flag(account), query },
-      msg = 'Background sync (threads)',
-      silent = true,
-      is_stale = function()
-        return my_gen ~= generation
-      end,
-      on_error = function()
-        sync_job = nil
-      end,
-      on_data = function(data)
-        sync_job = nil
-        if not vim.api.nvim_win_is_valid(listing_win) then
-          return
-        end
-
-        -- Build new ID set from edges
-        local new_ids_set = {}
-        for _, edge in ipairs(data) do
-          if edge.id then
-            new_ids_set[tostring(edge.id)] = true
-          end
-        end
-        local old_ids = ids_from_buffer(bufnr)
-
-        if sets_equal(old_ids, new_ids_set) then
-          return
-        end
-
-        local new_count, new_id_list = diff_new(old_ids, new_ids_set)
-
-        -- Refresh thread listing in-place
-        vim.api.nvim_win_call(listing_win, function()
-          local view = vim.fn.winsaveview()
-          local tree = require('himalaya.domain.email.tree')
-          local cfg = config.get()
-          local rows = tree.build(data, { reverse = cfg.thread_reverse })
-          tree.build_prefix(rows, { reverse = cfg.thread_reverse })
-
-          -- Pre-populate flags from existing cache
-          local ok, cached_envs = pcall(vim.api.nvim_buf_get_var, bufnr, 'himalaya_envelopes')
-          if ok and cached_envs then
-            local id_map = {}
-            for _, env in ipairs(cached_envs) do
-              id_map[tostring(env.id)] = env
-            end
-            for _, row in ipairs(rows) do
-              local flat = id_map[tostring(row.env.id)]
-              if flat then
-                row.env.flags = flat.flags
-                row.env.has_attachment = flat.has_attachment
-              end
-            end
-          end
-
-          thread_listing._set_state(rows, 1)
-          thread_listing.render_page(1, { restore_cursor = { view.lnum, view.col } })
-          vim.fn.winrestview(view)
-        end)
-
-        if new_count > 0 then
-          vim.notify(string.format('%d new in %s', new_count, folder), vim.log.levels.INFO)
-          events.emit('NewMail', {
-            account = account,
-            folder = folder,
-            count = new_count,
-            new_ids = new_id_list,
-          })
-        end
-      end,
-    })
-  else
-    -- Flat mode: re-fetch envelope list
-    local page = vim.b[bufnr].himalaya_page or 1
-    local page_size = vim.b[bufnr].himalaya_page_size or 50
-    local query = vim.b[bufnr].himalaya_query or ''
-
-    sync_job = request.json({
-      cmd = 'envelope list --folder %q %s --page-size %d --page %d %s',
-      args = { folder, account_flag(account), page_size, page, query },
-      msg = 'Background sync',
-      silent = true,
-      is_stale = function()
-        return my_gen ~= generation
-      end,
-      on_error = function()
-        sync_job = nil
-      end,
-      on_data = function(data)
-        sync_job = nil
-        if not vim.api.nvim_win_is_valid(listing_win) then
-          return
-        end
-
-        local new_ids = ids_from_envelopes(data)
-        local old_ids = ids_from_buffer(bufnr)
-
-        if sets_equal(old_ids, new_ids) then
-          return
-        end
-
-        local new_count, new_id_list = diff_new(old_ids, new_ids)
-
-        -- Refresh listing buffer in-place
-        vim.api.nvim_win_call(listing_win, function()
-          local view = vim.fn.winsaveview()
-          local renderer = require('himalaya.ui.renderer')
-          local listing = require('himalaya.ui.listing')
-          local email_mod = require('himalaya.domain.email')
-
-          local result = renderer.render(data, email_mod._bufwidth())
-          vim.bo[bufnr].modifiable = true
-          vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, result.lines)
-          listing.apply_header(bufnr, result.header)
-          listing.apply_highlights(
-            bufnr,
-            data,
-            { flags_compacted = result.flags_compacted, ids_compacted = result.ids_compacted }
-          )
-          vim.b[bufnr].himalaya_line_ids = result.ids
-          vim.bo[bufnr].modifiable = false
-          vim.b[bufnr].himalaya_envelopes = data
-          vim.fn.winrestview(view)
-        end)
-
-        if new_count > 0 then
-          vim.notify(string.format('%d new in %s', new_count, folder), vim.log.levels.INFO)
-          events.emit('NewMail', {
-            account = account,
-            folder = folder,
-            count = new_count,
-            new_ids = new_id_list,
-          })
-        end
-      end,
-    })
+    -- himalaya v2 has no `envelope thread` (envelope only has list/search)
+    -- - thread mode can't background-sync until that's reimplemented
+    -- client-side. Skip silently rather than repeatedly hitting a doomed
+    -- CLI call; see the comment on thread_listing.list for the same gap
+    -- at the point threading is actually loaded.
+    return
   end
+
+  -- Flat mode: re-fetch envelope list
+  local page = vim.b[bufnr].himalaya_page or 1
+  local page_size = vim.b[bufnr].himalaya_page_size or 50
+  local query = vim.b[bufnr].himalaya_query or ''
+
+  sync_job = request.json({
+    cmd = 'envelope list --mailbox %q %s --page-size %d --page %d %s',
+    unwrap = 'envelopes',
+    args = { folder, account_flag(account), page_size, page, query },
+    msg = 'Background sync',
+    silent = true,
+    is_stale = function()
+      return my_gen ~= generation
+    end,
+    on_error = function()
+      sync_job = nil
+    end,
+    on_data = function(data)
+      sync_job = nil
+      if not vim.api.nvim_win_is_valid(listing_win) then
+        return
+      end
+
+      local new_ids = ids_from_envelopes(data)
+      local old_ids = ids_from_buffer(bufnr)
+
+      if sets_equal(old_ids, new_ids) then
+        return
+      end
+
+      local new_count, new_id_list = diff_new(old_ids, new_ids)
+
+      -- Refresh listing buffer in-place
+      vim.api.nvim_win_call(listing_win, function()
+        local view = vim.fn.winsaveview()
+        local renderer = require('himalaya.ui.renderer')
+        local listing = require('himalaya.ui.listing')
+        local email_mod = require('himalaya.domain.email')
+
+        local result = renderer.render(data, email_mod._bufwidth())
+        vim.bo[bufnr].modifiable = true
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, result.lines)
+        listing.apply_header(bufnr, result.header)
+        listing.apply_highlights(
+          bufnr,
+          data,
+          { flags_compacted = result.flags_compacted, ids_compacted = result.ids_compacted }
+        )
+        vim.b[bufnr].himalaya_line_ids = result.ids
+        vim.bo[bufnr].modifiable = false
+        vim.b[bufnr].himalaya_envelopes = data
+        vim.fn.winrestview(view)
+      end)
+
+      if new_count > 0 then
+        vim.notify(string.format('%d new in %s', new_count, folder), vim.log.levels.INFO)
+        events.emit('NewMail', {
+          account = account,
+          folder = folder,
+          count = new_count,
+          new_ids = new_id_list,
+        })
+      end
+    end,
+  })
 end
 
 --- Start the background sync timer. Idempotent — if already running, no-op.

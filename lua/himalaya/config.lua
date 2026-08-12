@@ -23,6 +23,12 @@ local defaults = {
   -- Prompt before destructive actions (delete, move)
   always_confirm = true,
 
+  -- Mailbox delete() moves messages to (himalaya's `message delete` no
+  -- longer exists - deleting is moving to trash, same as most webmail).
+  -- Resolved through the account's [mailbox.alias] map, so this only needs
+  -- changing if an account's config doesn't alias 'trash' to something.
+  trash_mailbox = 'trash',
+
   -- Flag display characters in the listing
   flags = {
     header = 'FLGS',

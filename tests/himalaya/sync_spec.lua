@@ -586,6 +586,13 @@ describe('himalaya.sync', function()
   end)
 end)
 
+-- himalaya v2 has no `envelope thread` (envelope only has list/search), so
+-- thread-listing buffers can't background-sync until that's reimplemented
+-- client-side - see the comment in sync.lua's M.poll. This replaces what
+-- used to be a full describe block exercising the thread sync request/
+-- response cycle; that cycle no longer exists, so there's nothing left to
+-- test except that poll() recognizes a thread-listing buffer and bails out
+-- without issuing any CLI request.
 describe('himalaya.sync thread-listing path', function()
   local sync
 
@@ -673,140 +680,11 @@ describe('himalaya.sync thread-listing path', function()
     tracked_bufs = {}
   end)
 
-  it('issues thread envelope request for thread-listing buffer', function()
+  it('skips thread-listing buffers without issuing any CLI request', function()
     local captured = setup_thread_sync()
     make_thread_buf({ 1, 2 })
     sync.poll()
-    assert.is_not_nil(captured.opts)
-    assert.truthy(captured.opts.cmd:find('envelope thread'))
-  end)
-
-  it('thread on_error clears sync_job', function()
-    local captured = setup_thread_sync()
-    make_thread_buf({ 1 })
-    sync.poll()
-    assert.is_not_nil(sync._get_sync_job())
-    captured.opts.on_error()
+    assert.is_nil(captured.opts)
     assert.is_nil(sync._get_sync_job())
-  end)
-
-  it('thread is_stale returns true after cancel', function()
-    local captured = setup_thread_sync()
-    make_thread_buf({ 1 })
-    sync.poll()
-    assert.is_false(captured.opts.is_stale())
-    sync.cancel()
-    assert.is_true(captured.opts.is_stale())
-  end)
-
-  it('thread on_data skips when window is invalid', function()
-    local captured = setup_thread_sync()
-    local _, winid = make_thread_buf({ 1 })
-
-    -- Open a second window so we can close the listing one
-    vim.cmd('split')
-    local split_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_set_current_win(winid)
-
-    sync.poll()
-    vim.api.nvim_win_close(winid, true)
-
-    local orig_notify = vim.notify
-    vim.notify = function() end
-    -- Should not error
-    captured.opts.on_data({ { id = 99 } })
-    vim.notify = orig_notify
-
-    if vim.api.nvim_win_is_valid(split_win) and #vim.api.nvim_tabpage_list_wins(0) > 1 then
-      vim.api.nvim_win_close(split_win, true)
-    end
-  end)
-
-  it('thread on_data returns early when IDs are unchanged', function()
-    local captured = setup_thread_sync()
-    make_thread_buf({ 10, 20 })
-    sync.poll()
-
-    local notify_called = false
-    local orig_notify = vim.notify
-    vim.notify = function()
-      notify_called = true
-    end
-
-    captured.opts.on_data({ { id = 10 }, { id = 20 } })
-    vim.notify = orig_notify
-    assert.is_false(notify_called)
-  end)
-
-  it('thread on_data refreshes and notifies on new IDs', function()
-    local captured = setup_thread_sync()
-    make_thread_buf({ 10 })
-    sync.poll()
-
-    local notify_msg
-    local orig_notify = vim.notify
-    vim.notify = function(msg)
-      notify_msg = msg
-    end
-
-    local events = require('himalaya.events')
-    local emitted
-    events.on('NewMail', function(data)
-      emitted = data
-    end)
-
-    captured.opts.on_data({ { id = 10 }, { id = 20 } })
-    vim.notify = orig_notify
-
-    assert.is_not_nil(notify_msg)
-    assert.truthy(notify_msg:find('1 new'))
-    assert.is_not_nil(emitted)
-    assert.are.equal(1, emitted.count)
-  end)
-
-  it('thread on_data pre-populates flags from cache', function()
-    local captured = setup_thread_sync()
-    local bufnr = make_thread_buf({ 10 })
-    vim.b[bufnr].himalaya_envelopes = {
-      { id = 10, flags = { 'Seen' }, has_attachment = true },
-    }
-
-    local set_state_rows
-    package.loaded['himalaya.domain.email.thread_listing']._set_state = function(rows)
-      set_state_rows = rows
-    end
-
-    -- Re-require to pick up updated stub
-    package.loaded['himalaya.sync'] = nil
-    sync = require('himalaya.sync')
-
-    sync.poll()
-
-    local orig_notify = vim.notify
-    vim.notify = function() end
-    captured.opts.on_data({ { id = 10 }, { id = 30 } })
-    vim.notify = orig_notify
-
-    -- The row for id=10 should have had flags populated from cache
-    assert.is_not_nil(set_state_rows)
-  end)
-
-  it('thread on_data does not notify when no new IDs (only removals)', function()
-    local captured = setup_thread_sync()
-    make_thread_buf({ 10, 20, 30 })
-    sync.poll()
-
-    local notify_called = false
-    local orig_notify = vim.notify
-    vim.notify = function()
-      notify_called = true
-    end
-
-    -- Return fewer IDs (removals only, no additions)
-    captured.opts.on_data({ { id = 10 } })
-    vim.notify = orig_notify
-
-    -- diff_new counts IDs in new but not in old; here new_count = 0
-    assert.is_false(notify_called)
   end)
 end)

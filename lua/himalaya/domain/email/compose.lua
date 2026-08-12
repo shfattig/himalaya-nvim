@@ -95,8 +95,14 @@ function M.write(template)
   if template then
     open_write_buffer('edit', template, account, folder, nil, 'write')
   else
+    -- himalaya v2 replaced the `template` subcommand family with an
+    -- arg-based composer (message compose/reply/forward). Called with no
+    -- --to/--subject/--body, `message compose` still prints a minimal
+    -- editable RFC 5322 skeleton to stdout instead of sending anything (no
+    -- --send passed) - that's what preserves the "fetch a template, edit
+    -- it, :w to send" flow this buffer-based UI depends on.
     request.plain({
-      cmd = 'template write %s',
+      cmd = 'message compose %s',
       args = { account_flag(account) },
       msg = 'Fetching new template',
       on_data = function(data)
@@ -112,7 +118,7 @@ function M.reply()
   local account, folder = context.resolve()
   local id = context_email_id()
   request.plain({
-    cmd = 'template reply %s --folder %q %s',
+    cmd = 'message reply %s --mailbox %q %s',
     args = { account_flag(account), folder, id },
     msg = 'Fetching reply template',
     on_data = function(data)
@@ -122,14 +128,22 @@ function M.reply()
 end
 
 --- Reply-all to current email.
+-- himalaya v2's `message reply` has no reply-all equivalent at all (no
+-- --all/-A flag, no way to pull in the original Cc list) - it only
+-- "optionally derives recipients from Reply-To/From" per its own --help.
+-- Falling back to the same single-recipient reply rather than refusing
+-- outright, since a narrower Cc list is still useful and this isn't a
+-- fully broken subsystem like thread view or HTML export - just log
+-- clearly so the narrowed behavior isn't a silent surprise.
 function M.reply_all()
   local context = require('himalaya.state.context')
   local account, folder = context.resolve()
   local id = context_email_id()
+  log.warn('Reply-all is narrowed to reply: himalaya v2 has no --all equivalent, original Cc recipients are dropped')
   request.plain({
-    cmd = 'template reply %s --folder %q --all %s',
+    cmd = 'message reply %s --mailbox %q %s',
     args = { account_flag(account), folder, id },
-    msg = 'Fetching reply all template',
+    msg = 'Fetching reply template',
     on_data = function(data)
       open_write_buffer(string.format('reply all [%s]', id), data, account, folder, id, 'reply_all')
     end,
@@ -142,7 +156,7 @@ function M.forward()
   local account, folder = context.resolve()
   local id = context_email_id()
   request.plain({
-    cmd = 'template forward %s --folder %q %s',
+    cmd = 'message forward %s --mailbox %q %s',
     args = { account_flag(account), folder, id },
     msg = 'Fetching forward template',
     on_data = function(data)
@@ -177,7 +191,10 @@ function M.send(bufnr)
   local reply_id = vim.b[bufnr].himalaya_reply_id
 
   request.plain({
-    cmd = 'template send %s',
+    -- himalaya v2's `message send` still accepts a raw RFC 5322 message
+    -- via stdin (same as the old `template send`), just under the new
+    -- subcommand name.
+    cmd = 'message send %s',
     args = { account_flag(account) },
     stdin = content,
     msg = 'Sending email',
@@ -196,7 +213,7 @@ function M.send(bufnr)
       -- Add "answered" flag only for replies
       if reply_id and reply_id ~= '' then
         request.plain({
-          cmd = 'flag add %s --folder %q answered %s',
+          cmd = 'flag add %s --mailbox %q answered %s',
           args = { account_flag(account), folder, reply_id },
           msg = 'Adding answered flag',
         })
@@ -233,8 +250,10 @@ function M.process_draft(bufnr)
         -- (e.g. "Drafts", "INBOX.Drafts", "[Gmail]/Drafts") using IMAP
         -- special-use attributes or user-configured folder.aliases in the
         -- himalaya TOML config.  No need to make this configurable in the plugin.
+        -- himalaya v2's `message add` is the raw-RFC5322-via-stdin append
+        -- command now (--mailbox is mandatory, unlike the old --folder).
         request.plain({
-          cmd = 'template save %s --folder drafts',
+          cmd = 'message add --mailbox drafts %s',
           args = { account_flag(account) },
           stdin = content,
           msg = 'Saving draft',

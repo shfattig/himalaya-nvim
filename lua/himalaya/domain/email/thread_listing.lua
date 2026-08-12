@@ -1,4 +1,3 @@
-local request = require('himalaya.request')
 local config = require('himalaya.config')
 local account_state = require('himalaya.state.account')
 local tree = require('himalaya.domain.email.tree')
@@ -306,31 +305,13 @@ function M.list(account, opts)
     return
   end
 
-  -- Show loading indicator while fetching
-  local lbt = vim.b[vim.api.nvim_win_get_buf(listing_win)].himalaya_buffer_type
-  if lbt == 'listing' or lbt == 'thread-listing' then
-    vim.wo[listing_win].winbar = '%#Comment# loading...%*'
-  end
-
-  local cli_qry = require('himalaya.domain.email')._build_cli_query(thread_query, sort)
-  list_job = request.json({
-    cmd = 'envelope thread --folder %q %s %s',
-    args = { folder, account_flag(acct), cli_qry },
-    msg = string.format('Fetching %s threads', folder),
-    is_stale = function()
-      return my_gen ~= list_generation
-    end,
-    on_error = function()
-      list_job = nil
-      if vim.api.nvim_win_is_valid(listing_win) and vim.wo[listing_win].winbar:find('loading') then
-        vim.wo[listing_win].winbar = ''
-      end
-    end,
-    on_data = function(data)
-      list_job = nil
-      build_and_render(data, acct, folder, sort, cli_qry, listing_win, my_gen, opts)
-    end,
-  })
+  -- himalaya v2 has no `envelope thread` (envelope only has list/search) -
+  -- thread mode has no CLI to fetch from until that's reimplemented
+  -- client-side from flat envelope data (Message-ID/In-Reply-To/References
+  -- headers). Failing loudly here rather than sending a doomed request and
+  -- silently clearing the loading indicator on the inevitable on_error,
+  -- which left users with zero explanation of what happened.
+  log.err('Thread view is unavailable: himalaya v2 removed `envelope thread`, no CLI replacement exists yet')
 end
 
 --- Navigate to the next page of threads.
