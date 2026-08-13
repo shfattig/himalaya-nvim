@@ -258,6 +258,28 @@ local function resolve_target_ids(first_line, last_line)
   end
 end
 
+--- Merge freshly-fetched envelope data into a buffer's envelope cache,
+--- resetting the cache when the key (account/folder/query) has changed.
+--- Shared by on_list_with (the visible page) and the background page-prime
+--- fetch (the next page, cached for resize_listing to slice without a
+--- network round trip).
+--- @param bufnr number
+--- @param cache_key string
+--- @param data table[]
+--- @param offset number  0-based global index of data[1]
+local function merge_envelope_cache(bufnr, cache_key, data, offset)
+  if vim.b[bufnr].himalaya_cache_key ~= cache_key then
+    vim.b[bufnr].himalaya_envelopes = data
+    vim.b[bufnr].himalaya_cache_offset = offset
+  else
+    local merged, merged_offset =
+      cache.merge(vim.b[bufnr].himalaya_envelopes, vim.b[bufnr].himalaya_cache_offset or 0, data, offset)
+    vim.b[bufnr].himalaya_envelopes = merged
+    vim.b[bufnr].himalaya_cache_offset = merged_offset
+  end
+  vim.b[bufnr].himalaya_cache_key = cache_key
+end
+
 --- Internal callback for list_with — populates the envelope listing buffer.
 --- @param sort string  sort clause (e.g. 'date desc')
 --- @param fetch_offset? number actual CLI data offset (defaults to (page-1)*pg_size)
@@ -295,16 +317,7 @@ local function on_list_with(account, folder, page, pg_size, qry, sort, data, fet
   vim.b[bufnr].himalaya_query = qry
   vim.b[bufnr].himalaya_sort = sort
 
-  if vim.b[bufnr].himalaya_cache_key ~= cache_key then
-    vim.b[bufnr].himalaya_envelopes = data
-    vim.b[bufnr].himalaya_cache_offset = new_offset
-  else
-    local merged, merged_offset =
-      cache.merge(vim.b[bufnr].himalaya_envelopes, vim.b[bufnr].himalaya_cache_offset or 0, data, new_offset)
-    vim.b[bufnr].himalaya_envelopes = merged
-    vim.b[bufnr].himalaya_cache_offset = merged_offset
-  end
-  vim.b[bufnr].himalaya_cache_key = cache_key
+  merge_envelope_cache(bufnr, cache_key, data, new_offset)
 
   local result = renderer.render(page_data, M._bufwidth())
   -- Empty folder: show placeholder and finish early
@@ -438,11 +451,9 @@ function M.list_with(account, folder, page, qry, sort)
   if vim.wo.winbar == '' then
     ps = math.max(1, ps - 1)
   end
-  -- Double the fetch size to prime the cache with an extra page of
-  -- envelopes.  Adjust the CLI page number so the returned data always
-  -- covers the requested display page:
-  --   cli_page = ceil(page/2), fetch_ps = ps*2
-  -- Odd display pages → first half of CLI data, even → second half.
+  -- Search still scans in doubled batches (fewer round trips while
+  -- looking for a target ID that isn't shown until found anyway - staging
+  -- doesn't help a fetch nothing renders from).
   local fetch_ps = ps * 2
   local cli_qry = build_cli_query(qry, sort)
   local search_target = saved_cursor_id
@@ -460,12 +471,40 @@ function M.list_with(account, folder, page, qry, sort)
     end
   end
 
-  -- Normal fetch: doubled page size for cache priming.
-  local function do_fetch(cli_page, batch_offset)
+  -- Fetch exactly the next page (ps-sized) in the background afterwards
+  -- and merge it into the cache, so resize_listing can still slice extra
+  -- rows without a network round trip. Doesn't touch the visible buffer,
+  -- so it can't delay the page that's already on screen.
+  local function prime_next_page(cli_page)
+    request.json({
+      cmd = envelope_list_cmd(cli_qry),
+      unwrap = 'envelopes',
+      args = { folder, acct_flag, ps, cli_page, cli_qry },
+      msg = string.format('Priming %s envelopes', folder),
+      silent = true,
+      is_stale = function()
+        return my_gen ~= fetch_generation
+      end,
+      on_data = function(data)
+        if not vim.api.nvim_win_is_valid(listing_win) then
+          return
+        end
+        local bufnr = vim.api.nvim_win_get_buf(listing_win)
+        local acct_flag_str = table.concat(acct_flag, ' ')
+        local cache_key = acct_flag_str .. '\0' .. folder .. '\0' .. cli_qry
+        merge_envelope_cache(bufnr, cache_key, data, (cli_page - 1) * ps)
+      end,
+    })
+  end
+
+  -- Fetch exactly the requested display page (ps-sized) so the listing
+  -- paints as fast as possible, then prime the next page in the
+  -- background (see prime_next_page).
+  local function do_fetch(fetch_page)
     fetch_job = request.json({
       cmd = envelope_list_cmd(cli_qry),
       unwrap = 'envelopes',
-      args = { folder, acct_flag, fetch_ps, cli_page, cli_qry },
+      args = { folder, acct_flag, ps, fetch_page, cli_qry },
       msg = string.format('Fetching %s envelopes', folder),
       is_stale = function()
         return my_gen ~= fetch_generation
@@ -477,8 +516,9 @@ function M.list_with(account, folder, page, qry, sort)
           return
         end
         vim.api.nvim_win_call(listing_win, function()
-          on_list_with(account, folder, page, ps, qry, sort, data, batch_offset)
+          on_list_with(account, folder, fetch_page, ps, qry, sort, data, (fetch_page - 1) * ps)
         end)
+        prime_next_page(fetch_page + 1)
       end,
     })
   end
@@ -502,8 +542,7 @@ function M.list_with(account, folder, page, qry, sort)
         on_error = function()
           fetch_job = nil
           -- Page beyond data: fall back to page 1.
-          page = 1
-          do_fetch(1, 0)
+          do_fetch(1)
         end,
         on_data = function(data)
           fetch_job = nil
@@ -525,16 +564,14 @@ function M.list_with(account, folder, page, qry, sort)
             search_batch(cli_page + 1)
           else
             -- End of data: fall back to page 1.
-            page = 1
-            do_fetch(1, 0)
+            do_fetch(1)
           end
         end,
       })
     end
     search_batch(1)
   else
-    local cli_page = math.ceil(page / 2)
-    do_fetch(cli_page, (cli_page - 1) * fetch_ps)
+    do_fetch(page)
   end
 end
 

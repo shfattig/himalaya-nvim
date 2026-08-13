@@ -3,7 +3,8 @@ describe('himalaya.domain.email resize_listing', function()
   local rendered_envs
   local original_height
   local last_request_json_opts -- captured from request.json mock
-  local mock_request_sync_data -- set before list_with to make request.json call on_data synchronously
+  local request_json_calls -- every request.json call's opts, in order (list_with now fires a background prime request after the main one)
+  local mock_request_sync_data -- set before list_with to make request.json call on_data synchronously, consumed after one call
   local mock_request_job -- return value for request.json (fake SystemObj)
   local probe_cancel_count -- tracks probe.cancel() calls
 
@@ -46,19 +47,26 @@ describe('himalaya.domain.email resize_listing', function()
 
     rendered_envs = nil
     last_request_json_opts = nil
+    request_json_calls = {}
     mock_request_sync_data = nil
     mock_request_job = nil
     probe_cancel_count = 0
 
     -- Stub out every dependency that email.lua requires at load time.
     -- request mock: captures args for verification; can be made synchronous
-    -- by setting mock_request_sync_data before calling list_with.
+    -- by setting mock_request_sync_data before calling list_with. Consumed
+    -- after firing once, so list_with's background page-prime request
+    -- (fired from inside the main fetch's on_data) doesn't also replay the
+    -- same canned data into a second on_data call.
     package.loaded['himalaya.request'] = {
       json = function(opts)
         last_request_json_opts = opts
+        request_json_calls[#request_json_calls + 1] = opts
         if mock_request_sync_data and opts.on_data then
+          local data = mock_request_sync_data
+          mock_request_sync_data = nil
           if not (opts.is_stale and opts.is_stale()) then
-            opts.on_data(mock_request_sync_data)
+            opts.on_data(data)
           end
         end
         return mock_request_job
@@ -1574,9 +1582,9 @@ describe('himalaya.domain.email resize_listing', function()
 
   describe('on_list_with integration', function()
     it('sets cache_offset buffer variable', function()
-      -- With doubled fetch, display page 2 → cli_page=1, fetch_offset=0
+      -- Display page 2 fetches exactly page 2 (ps-sized), offset = ps.
       local ps = 5
-      mock_request_sync_data = make_envelopes(1, ps * 2)
+      mock_request_sync_data = make_envelopes(1, ps)
       vim.b.himalaya_buffer_type = 'listing'
       seed_buffer_lines(1)
       vim.wo.winbar = 'hdr'
@@ -1584,7 +1592,7 @@ describe('himalaya.domain.email resize_listing', function()
 
       email.list_with('test', 'INBOX', 2, '')
 
-      assert.are.equal(0, vim.b.himalaya_cache_offset)
+      assert.are.equal(ps, vim.b.himalaya_cache_offset)
       vim.wo.winbar = ''
     end)
 
@@ -1682,10 +1690,10 @@ describe('himalaya.domain.email resize_listing', function()
     end)
   end)
 
-  -- ── doubled fetch (2x page_size for cache priming) ───────────────
+  -- ── staged fetch (exact page first, next page primed in background) ──
 
-  describe('doubled fetch', function()
-    it('sends doubled page_size and adjusted CLI page for page 1', function()
+  describe('staged fetch', function()
+    it('fetches exactly the requested page for page 1', function()
       local ps = 5
       vim.b.himalaya_buffer_type = 'listing'
       seed_buffer_lines(1)
@@ -1695,11 +1703,12 @@ describe('himalaya.domain.email resize_listing', function()
       email.list_with('test', 'INBOX', 1, '')
 
       -- CLI args: { folder, account_flag, page_size, page, query }
-      assert.are.equal(ps * 2, last_request_json_opts.args[3], 'CLI page_size should be doubled')
-      assert.are.equal(1, last_request_json_opts.args[4], 'CLI page should be ceil(1/2) = 1')
+      local main_call = request_json_calls[1]
+      assert.are.equal(ps, main_call.args[3], 'main fetch page_size should equal the display page size')
+      assert.are.equal(1, main_call.args[4], 'main fetch CLI page should equal the display page')
     end)
 
-    it('sends doubled page_size and adjusted CLI page for page 2', function()
+    it('fetches exactly the requested page for page 2', function()
       local ps = 5
       vim.b.himalaya_buffer_type = 'listing'
       seed_buffer_lines(1)
@@ -1708,12 +1717,12 @@ describe('himalaya.domain.email resize_listing', function()
 
       email.list_with('test', 'INBOX', 2, '')
 
-      assert.are.equal(ps * 2, last_request_json_opts.args[3], 'CLI page_size should be doubled')
-      -- ceil(2/2) = 1 → CLI fetches page 1 with 2x size
-      assert.are.equal(1, last_request_json_opts.args[4], 'CLI page should be ceil(2/2) = 1')
+      local main_call = request_json_calls[1]
+      assert.are.equal(ps, main_call.args[3], 'main fetch page_size should equal the display page size')
+      assert.are.equal(2, main_call.args[4], 'main fetch CLI page should equal the display page')
     end)
 
-    it('sends doubled page_size and adjusted CLI page for page 3', function()
+    it('fetches exactly the requested page for page 3', function()
       local ps = 5
       vim.b.himalaya_buffer_type = 'listing'
       seed_buffer_lines(1)
@@ -1722,51 +1731,33 @@ describe('himalaya.domain.email resize_listing', function()
 
       email.list_with('test', 'INBOX', 3, '')
 
-      assert.are.equal(ps * 2, last_request_json_opts.args[3], 'CLI page_size should be doubled')
-      -- ceil(3/2) = 2
-      assert.are.equal(2, last_request_json_opts.args[4], 'CLI page should be ceil(3/2) = 2')
+      local main_call = request_json_calls[1]
+      assert.are.equal(ps, main_call.args[3], 'main fetch page_size should equal the display page size')
+      assert.are.equal(3, main_call.args[4], 'main fetch CLI page should equal the display page')
     end)
 
-    it('renders display page 2 from doubled data correctly', function()
+    it('primes the next page in the background after the main fetch', function()
       local ps = 5
-      -- Mock: CLI returns 10 items for cli_page=1, fetch_ps=10
-      mock_request_sync_data = make_envelopes(1, 10)
       vim.b.himalaya_buffer_type = 'listing'
       seed_buffer_lines(1)
       vim.wo.winbar = 'hdr'
       vim.api.nvim_win_set_height(0, ps + 1)
+      mock_request_sync_data = make_envelopes(1, ps)
 
-      email.list_with('test', 'INBOX', 2, '')
+      email.list_with('test', 'INBOX', 1, '')
 
-      -- Display page 2 should show IDs 6-10 (second half of doubled data)
-      assert.is_not_nil(rendered_envs)
-      assert.are.equal(ps, #rendered_envs)
-      assert.are.equal('6', rendered_envs[1].id)
-      assert.are.equal('10', rendered_envs[ps].id)
-
-      vim.wo.winbar = ''
-    end)
-
-    it('sets correct cache_offset for doubled fetch on page 2', function()
-      local ps = 5
-      mock_request_sync_data = make_envelopes(1, 10)
-      vim.b.himalaya_buffer_type = 'listing'
-      seed_buffer_lines(1)
-      vim.wo.winbar = 'hdr'
-      vim.api.nvim_win_set_height(0, ps + 1)
-
-      email.list_with('test', 'INBOX', 2, '')
-
-      -- Data covers offset 0..9, cache_offset should be 0
-      assert.are.equal(0, vim.b.himalaya_cache_offset)
-      assert.are.equal(10, #vim.b.himalaya_envelopes)
+      assert.are.equal(2, #request_json_calls, 'expected a main fetch plus one background prime fetch')
+      local prime_call = request_json_calls[2]
+      assert.are.equal(ps, prime_call.args[3], 'prime fetch page_size should match the display page size')
+      assert.are.equal(2, prime_call.args[4], 'prime fetch CLI page should be the next page')
+      assert.is_true(prime_call.silent, 'prime fetch should be silent (best-effort)')
 
       vim.wo.winbar = ''
     end)
 
-    it('renders display page 1 from doubled data correctly', function()
+    it('renders display page 1 from the main fetch without waiting on the prime fetch', function()
       local ps = 5
-      mock_request_sync_data = make_envelopes(1, 10)
+      mock_request_sync_data = make_envelopes(1, ps)
       vim.b.himalaya_buffer_type = 'listing'
       seed_buffer_lines(1)
       vim.wo.winbar = 'hdr'
@@ -1774,11 +1765,54 @@ describe('himalaya.domain.email resize_listing', function()
 
       email.list_with('test', 'INBOX', 1, '')
 
-      -- Display page 1 should show IDs 1-5 (first half)
       assert.is_not_nil(rendered_envs)
       assert.are.equal(ps, #rendered_envs)
       assert.are.equal('1', rendered_envs[1].id)
       assert.are.equal('5', rendered_envs[ps].id)
+      assert.are.equal(0, vim.b.himalaya_cache_offset)
+
+      vim.wo.winbar = ''
+    end)
+
+    it('renders display page 2 from the main fetch without waiting on the prime fetch', function()
+      local ps = 5
+      mock_request_sync_data = make_envelopes(6, ps)
+      vim.b.himalaya_buffer_type = 'listing'
+      seed_buffer_lines(1)
+      vim.wo.winbar = 'hdr'
+      vim.api.nvim_win_set_height(0, ps + 1)
+
+      email.list_with('test', 'INBOX', 2, '')
+
+      assert.is_not_nil(rendered_envs)
+      assert.are.equal(ps, #rendered_envs)
+      assert.are.equal('6', rendered_envs[1].id)
+      assert.are.equal('10', rendered_envs[ps].id)
+      assert.are.equal(ps, vim.b.himalaya_cache_offset)
+
+      vim.wo.winbar = ''
+    end)
+
+    it('merges the primed next page into the cache once it arrives', function()
+      local ps = 5
+      vim.b.himalaya_buffer_type = 'listing'
+      seed_buffer_lines(1)
+      vim.wo.winbar = 'hdr'
+      vim.api.nvim_win_set_height(0, ps + 1)
+
+      -- Only the main fetch gets synchronous data (mock_request_sync_data
+      -- is consumed after one call); fire the prime fetch's on_data by hand
+      -- to simulate its (later, async) response arriving.
+      mock_request_sync_data = make_envelopes(1, ps)
+      email.list_with('test', 'INBOX', 1, '')
+      assert.are.equal(ps, #vim.b.himalaya_envelopes)
+
+      local prime_call = request_json_calls[2]
+      prime_call.on_data(make_envelopes(6, ps))
+
+      assert.are.equal(ps * 2, #vim.b.himalaya_envelopes, 'cache should now cover both pages')
+      assert.are.equal('1', vim.b.himalaya_envelopes[1].id)
+      assert.are.equal('10', vim.b.himalaya_envelopes[ps * 2].id)
 
       vim.wo.winbar = ''
     end)
@@ -2226,15 +2260,17 @@ describe('himalaya.domain.email resize_listing', function()
 
   describe('mark_envelope_seen with cumulative cache', function()
     it('renders correct page slice on page 2 with cumulative cache', function()
-      -- With doubled fetch, display page 2 uses cli_page=1.
-      -- A single fetch with 10 items builds the cache for both pages.
+      -- Build a cumulative cache across two display pages via two list_with
+      -- calls (each fetches exactly its own page now).
       local ps = 5
-      mock_request_sync_data = make_envelopes(1, ps * 2)
       vim.b.himalaya_buffer_type = 'listing'
       seed_buffer_lines(1)
       vim.wo.winbar = 'hdr'
       vim.api.nvim_win_set_height(0, ps + 1)
 
+      mock_request_sync_data = make_envelopes(1, ps)
+      email.list_with('test', 'INBOX', 1, '')
+      mock_request_sync_data = make_envelopes(6, ps)
       email.list_with('test', 'INBOX', 2, '')
 
       -- Cache: 10 envelopes (IDs 1-10), page=2, page_size=5
@@ -2282,19 +2318,22 @@ describe('himalaya.domain.email resize_listing', function()
     end)
 
     it('updates Seen flag in cumulative cache', function()
-      -- With doubled fetch, build cache via display page 2 (cli_page=1).
+      -- Build cache via two list_with calls (page 1, then page 2).
       -- First 5 envelopes have Seen, second 5 do not.
       local ps = 5
-      local all_envs = make_envelopes(1, ps * 2)
-      for i = ps + 1, ps * 2 do
-        all_envs[i].flags = {}
+      local page1_envs = make_envelopes(1, ps)
+      local page2_envs = make_envelopes(6, ps)
+      for _, env in ipairs(page2_envs) do
+        env.flags = {}
       end
-      mock_request_sync_data = all_envs
       vim.b.himalaya_buffer_type = 'listing'
       seed_buffer_lines(1)
       vim.wo.winbar = 'hdr'
       vim.api.nvim_win_set_height(0, ps + 1)
 
+      mock_request_sync_data = page1_envs
+      email.list_with('test', 'INBOX', 1, '')
+      mock_request_sync_data = page2_envs
       email.list_with('test', 'INBOX', 2, '')
 
       -- Envelope 8 (index 8 in cache) should not have Seen flag yet
