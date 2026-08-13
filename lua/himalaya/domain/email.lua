@@ -640,10 +640,12 @@ function M.read()
         plog(string.format('fetch done (%d chars)', #data))
         -- Prepare email content into a buffer before showing it,
         -- so the split appears with content already loaded (no flash).
-        local lines = vim.split(data:gsub('\r', ''), '\n')
-        if #lines > 1 and lines[#lines] == '' then
-          table.remove(lines)
+        local raw_lines = vim.split(data:gsub('\r', ''), '\n')
+        if #raw_lines > 1 and raw_lines[#raw_lines] == '' then
+          table.remove(raw_lines)
         end
+        local headers = require('himalaya.domain.email.headers')
+        local lines, fold_start, fold_end = headers.render(raw_lines)
 
         -- Reuse existing email window in current tab to avoid resize jitter
         local reused = false
@@ -687,6 +689,7 @@ function M.read()
         vim.b.himalaya_folder = folder
         vim.b.himalaya_current_email_id = current_id
         vim.b.himalaya_image_png = nil
+        vim.b.himalaya_header_fold_range = fold_start and { fold_start, fold_end } or nil
         vim.bo.filetype = 'himalaya-email-reading'
         vim.bo.modified = false
         vim.cmd('0')

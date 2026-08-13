@@ -2,8 +2,32 @@ local keybinds = require('himalaya.keybinds')
 local email = require('himalaya.domain.email')
 local compose = require('himalaya.domain.email.compose')
 local win = require('himalaya.ui.win')
+local log = require('himalaya.log')
 
 local M = {}
+
+local EMAIL_PATTERN = '[%w.+_%-]+@[%w.%-]+%.[%w]+'
+
+--- Find the email address on the current line, preferring one whose span
+--- contains the cursor column, falling back to the first match on the line.
+--- @return string?
+local function address_under_cursor()
+  local line = vim.api.nvim_get_current_line()
+  local col = vim.api.nvim_win_get_cursor(0)[2] + 1
+  local first, pos = nil, 1
+  while true do
+    local s, e = line:find(EMAIL_PATTERN, pos)
+    if not s then
+      break
+    end
+    first = first or { s, e }
+    if col >= s and col <= e then
+      return line:sub(s, e)
+    end
+    pos = e + 1
+  end
+  return first and line:sub(first[1], first[2]) or nil
+end
 
 --- Navigate to the next or previous email in the listing and read it.
 --- @param direction number  +1 for next, -1 for previous
@@ -54,6 +78,34 @@ function M.setup(bufnr)
     { 'n', 'gM', email.select_folder_then_move, 'email-select-folder-then-move' },
     { 'n', 'gD', email.delete, 'email-delete' },
     { 'n', 'gb', email.open_browser, 'email-open-browser' },
+    {
+      'n',
+      'gy',
+      function()
+        local addr = address_under_cursor()
+        if not addr then
+          log.info('No email address on this line')
+          return
+        end
+        vim.fn.setreg('"', addr)
+        vim.fn.setreg('+', addr)
+        log.info('Yanked ' .. addr)
+      end,
+      'email-yank-address',
+    },
+    {
+      'n',
+      'gW',
+      function()
+        local addr = address_under_cursor()
+        if not addr then
+          log.info('No email address on this line')
+          return
+        end
+        compose.write_to(addr)
+      end,
+      'email-write-to-address',
+    },
     {
       'n',
       'gi',

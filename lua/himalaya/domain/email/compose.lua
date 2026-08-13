@@ -112,6 +112,22 @@ function M.write(template)
   end
 end
 
+--- Compose a new email pre-addressed to a given recipient (e.g. an address
+--- picked off a header line in the reading buffer).
+--- @param addr string
+function M.write_to(addr)
+  local context = require('himalaya.state.context')
+  local account, folder = context.resolve()
+  request.plain({
+    cmd = 'message compose %s --to %q',
+    args = { account_flag(account), addr },
+    msg = 'Fetching new template',
+    on_data = function(data)
+      open_write_buffer('write', data, account, folder, nil, 'write')
+    end,
+  })
+end
+
 --- Reply to current email.
 function M.reply()
   local context = require('himalaya.state.context')

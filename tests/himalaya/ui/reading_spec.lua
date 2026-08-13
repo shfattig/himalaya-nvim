@@ -24,6 +24,7 @@ describe('himalaya.ui.reading', function()
     }
     package.loaded['himalaya.domain.email.compose'] = {
       write = noop,
+      write_to = noop,
       reply = noop,
       reply_all = noop,
       forward = noop,
@@ -72,7 +73,7 @@ describe('himalaya.ui.reading', function()
   it('setup() registers reading keybinds', function()
     reading.setup(bufnr)
     local maps = vim.api.nvim_buf_get_keymap(bufnr, 'n')
-    local expected_keys = { 'gw', 'gr', 'gR', 'gf', 'ga', 'gA', 'gC', 'gM', 'gD', 'gb', ']]', '[[', '?' }
+    local expected_keys = { 'gw', 'gr', 'gR', 'gf', 'ga', 'gA', 'gC', 'gM', 'gD', 'gb', 'gy', 'gW', ']]', '[[', '?' }
     for _, key in ipairs(expected_keys) do
       local found = false
       for _, map in ipairs(maps) do
@@ -96,7 +97,7 @@ describe('himalaya.ui.reading', function()
     assert.is_truthy(vim.wo[winid].winbar:find('42'))
   end)
 
-  it('setup() registers exactly 16 normal-mode keybinds', function()
+  it('setup() registers exactly 18 normal-mode keybinds', function()
     reading.setup(bufnr)
     local maps = vim.api.nvim_buf_get_keymap(bufnr, 'n')
     local count = 0
@@ -105,8 +106,9 @@ describe('himalaya.ui.reading', function()
         count = count + 1
       end
     end
-    -- 16 = the base reading binds + gI (toggle HTML image rendering)
-    assert.equals(16, count)
+    -- 18 = the base reading binds + gI (toggle HTML image rendering)
+    -- + gy/gW (yank / compose-to address under cursor)
+    assert.equals(18, count)
   end)
 
   describe('navigate_email via keybinds', function()
@@ -243,6 +245,71 @@ describe('himalaya.ui.reading', function()
       reading.setup(bufnr)
       vim.cmd('normal ga')
       assert.is_true(account_selected)
+    end)
+  end)
+
+  describe('gy keybind (yank address under cursor)', function()
+    it('yanks the address found on the current line', function()
+      reading.setup(bufnr)
+      vim.bo[bufnr].modifiable = true
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'From:    Alice <alice@example.com>' })
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      vim.cmd('normal gy')
+      assert.equals('alice@example.com', vim.fn.getreg('"'))
+    end)
+
+    it('is a no-op when the line has no address', function()
+      reading.setup(bufnr)
+      vim.bo[bufnr].modifiable = true
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'Subject: no address here' })
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      vim.fn.setreg('"', 'unchanged')
+      vim.cmd('normal gy')
+      assert.equals('unchanged', vim.fn.getreg('"'))
+    end)
+  end)
+
+  describe('gW keybind (compose to address under cursor)', function()
+    it('calls compose.write_to with the address on the current line', function()
+      local written_to = nil
+      package.loaded['himalaya.domain.email.compose'] = {
+        write = noop,
+        write_to = function(addr)
+          written_to = addr
+        end,
+        reply = noop,
+        reply_all = noop,
+        forward = noop,
+      }
+      package.loaded['himalaya.ui.reading'] = nil
+      reading = require('himalaya.ui.reading')
+      reading.setup(bufnr)
+      vim.bo[bufnr].modifiable = true
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'Cc:      bob@example.com, carol@example.com' })
+      vim.api.nvim_win_set_cursor(0, { 1, 30 })
+      vim.cmd('normal gW')
+      assert.equals('carol@example.com', written_to)
+    end)
+
+    it('is a no-op when the line has no address', function()
+      local called = false
+      package.loaded['himalaya.domain.email.compose'] = {
+        write = noop,
+        write_to = function()
+          called = true
+        end,
+        reply = noop,
+        reply_all = noop,
+        forward = noop,
+      }
+      package.loaded['himalaya.ui.reading'] = nil
+      reading = require('himalaya.ui.reading')
+      reading.setup(bufnr)
+      vim.bo[bufnr].modifiable = true
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'Subject: no address here' })
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      vim.cmd('normal gW')
+      assert.is_false(called)
     end)
   end)
 end)
