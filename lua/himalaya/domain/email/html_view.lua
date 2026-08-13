@@ -18,6 +18,15 @@ local M = {}
 
 local account_flag = account_state.flag
 
+--- Path to pandoc_filter.lua, a sibling file (NOT a neovim module - see its
+--- own header comment) - resolved relative to this file's own source path
+--- so it works regardless of where the plugin is installed.
+local PANDOC_FILTER = (function()
+  local source = debug.getinfo(1, 'S').source
+  local dir = source:sub(1, 1) == '@' and source:sub(2):match('(.*)/[^/]+$') or nil
+  return dir and (dir .. '/pandoc_filter.lua') or nil
+end)()
+
 local ENTITIES = {
   ['&amp;'] = '&',
   ['&lt;'] = '<',
@@ -153,19 +162,29 @@ function M.fetch_html(account, folder, id, callback)
   })
 end
 
---- Convert HTML to a lines[] text view. Prefers shelling out to pandoc
---- (`-t markdown`, matching M.to_text's own **bold**/`# heading` style)
---- when it's on PATH; falls back to the bespoke M.to_text parser above
+--- Convert HTML to a lines[] text view. Prefers shelling out to pandoc when
+--- it's on PATH, falling back to the bespoke M.to_text parser above
 --- otherwise, or if pandoc unexpectedly fails/produces nothing.
+---
+--- Target is `-t plain`, not `-t markdown`: pandoc's markdown writer tries
+--- to faithfully round-trip the HTML's div/table structure as literal
+--- fenced-div and grid-table syntax, which for a marketing email's
+--- full-width layout table produces walls of box-drawing borders padded to
+--- the width of the entire message. `plain` skips all of that and reads
+--- like an actual plain-text email; pandoc_filter.lua (--lua-filter, a
+--- sibling file, not a neovim module) additionally flattens any remaining
+--- layout tables into flowing paragraphs and drops alt-text-less tracking
+--- pixels, since even `plain` still renders real <table> elements as an
+--- ASCII grid otherwise.
 --- @param html string
 --- @param callback fun(lines: string[])
 function M.convert(html, callback)
-  if vim.fn.executable('pandoc') ~= 1 then
+  if vim.fn.executable('pandoc') ~= 1 or not PANDOC_FILTER then
     callback(M.to_text(html))
     return
   end
   vim.system(
-    { 'pandoc', '-f', 'html', '-t', 'markdown', '--wrap=none' },
+    { 'pandoc', '-f', 'html', '-t', 'plain', '--wrap=none', '--lua-filter=' .. PANDOC_FILTER },
     { text = true, stdin = html },
     function(result)
       vim.schedule(function()

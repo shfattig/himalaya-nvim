@@ -17,3 +17,8 @@ files["tests/"] = {
 
 -- Ignore line-length (stylua handles formatting)
 ignore = { "631" }
+
+-- Not a neovim plugin module - a standalone Pandoc Lua filter, run by the
+-- external `pandoc` binary in its own Lua environment with its own
+-- global-function-per-AST-node-type convention (Table(), Image(), ...).
+exclude_files = { "lua/himalaya/domain/email/pandoc_filter.lua" }
