@@ -97,6 +97,12 @@ require('himalaya').setup({
   -- Prompt before destructive actions (delete, move)
   always_confirm = true,
 
+  -- Mailbox delete() moves messages to (himalaya's `message delete` no
+  -- longer exists - deleting is moving to trash, same as most webmail).
+  -- Resolved through the account's [mailbox.alias] map, so this only needs
+  -- changing if an account's config doesn't alias 'trash' to something.
+  trash_mailbox = 'trash',
+
   -- Flag display characters in the listing
   flags = {
     header = 'FLGS',
@@ -143,6 +149,14 @@ require('himalaya').setup({
 
   -- Per-account email signatures: string or { account_name = string }
   signature = nil,
+
+  -- This account's own email address(es), used by reply_all() to exclude
+  -- yourself from the Cc list it computes. himalaya has no way to expose
+  -- an OAuth-backed account's address (e.g. Gmail's `user-id = "me"`), so
+  -- it can't be inferred automatically. string, string[], or
+  -- { account_name = string|string[] }. nil = skip self-filtering (your
+  -- own address may then show up in the computed Cc list).
+  own_email = nil,
 
   -- Reading pane split configuration.
   -- threshold: listing width at which 'over' vs 'under' is chosen.
