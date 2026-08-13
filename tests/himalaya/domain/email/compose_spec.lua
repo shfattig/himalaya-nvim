@@ -427,21 +427,118 @@ describe('himalaya.domain.email.compose (write/reply/forward)', function()
   end)
 
   describe('reply_all', function()
-    -- himalaya v2's `message reply` has no --all/reply-all equivalent, so
-    -- reply_all now issues the exact same command as reply() - see the
-    -- comment on M.reply_all. This is a narrowing (original Cc recipients
-    -- are dropped), not a distinct code path anymore.
-    it('fetches reply template (narrowed, no --all equivalent) and opens buffer', function()
+    -- himalaya v2's `message reply` has no --all/-A flag of its own, so
+    -- reply_all reads the original message first to recover its To/Cc,
+    -- then inserts a computed Cc: line into the reply template - see the
+    -- comment on M.reply_all.
+    it('reads the original message before fetching the reply template', function()
       compose.reply_all()
       assert.are.equal(1, #request_calls)
-      assert.is_truthy(request_calls[1].cmd:find('message reply'))
-      assert.is_falsy(request_calls[1].cmd:find('%-%-all'))
-      -- Trigger on_data
-      request_calls[1].on_data('Re: Test\n\n> original')
+      assert.is_truthy(request_calls[1].cmd:find('message read'))
+    end)
+
+    it('inserts a Cc line with original To/Cc, excluding self and the primary recipient', function()
+      compose.reply_all()
+      request_calls[1].on_data(table.concat({
+        'From: Alice <alice@example.com>',
+        'To: Me <me@example.com>, Carol <carol@example.com>',
+        'Cc: Dave <dave@example.com>',
+        'Subject: Test',
+        '',
+        'Original body',
+      }, '\n'))
+
+      assert.are.equal(2, #request_calls)
+      assert.is_truthy(request_calls[2].cmd:find('message reply'))
+
+      request_calls[2].on_data(table.concat({
+        'From: Me <me@example.com>',
+        'To: Alice <alice@example.com>',
+        'Subject: Re: Test',
+        '',
+        '> Original body',
+      }, '\n'))
+
+      local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+      local cc_line
+      for _, l in ipairs(lines) do
+        if l:match('^Cc:') then
+          cc_line = l
+        end
+      end
+      assert.is_not_nil(cc_line)
+      assert.is_truthy(cc_line:find('carol@example.com'))
+      assert.is_truthy(cc_line:find('dave@example.com'))
+      -- Self (me@) and the primary recipient (alice@) must not be duplicated into Cc.
+      assert.is_falsy(cc_line:find('me@example.com'))
+      assert.is_falsy(cc_line:find('alice@example.com'))
+
       assert.are.equal('himalaya-email-writing', vim.bo.filetype)
       assert.are.equal('42', vim.b.himalaya_reply_id)
       assert.are.equal(1, #emitted_events)
       assert.are.equal('reply_all', emitted_events[1].data.mode)
+      track(vim.api.nvim_get_current_buf())
+    end)
+
+    it('filters your own address via cfg.own_email when the reply template has no From: line', function()
+      -- Real himalaya `message reply` output has no From: header at all
+      -- (the sending address isn't resolved until send time), so without
+      -- cfg.own_email the account's own address can't be excluded.
+      require('himalaya.config').setup({ own_email = 'me@example.com' })
+      package.loaded['himalaya.domain.email.compose'] = nil
+      compose = require('himalaya.domain.email.compose')
+
+      compose.reply_all()
+      request_calls[1].on_data(table.concat({
+        'From: Alice <alice@example.com>',
+        'To: Me <me@example.com>, Carol <carol@example.com>',
+        'Subject: Test',
+        '',
+        'Original body',
+      }, '\n'))
+      request_calls[2].on_data(table.concat({
+        'To: Alice <alice@example.com>',
+        'Subject: Re: Test',
+        '',
+        '> Original body',
+      }, '\n'))
+
+      local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+      local cc_line
+      for _, l in ipairs(lines) do
+        if l:match('^Cc:') then
+          cc_line = l
+        end
+      end
+      assert.is_not_nil(cc_line)
+      assert.is_truthy(cc_line:find('carol@example.com'))
+      assert.is_falsy(cc_line:find('me@example.com'))
+
+      track(vim.api.nvim_get_current_buf())
+    end)
+
+    it('omits the Cc line when there are no additional recipients', function()
+      compose.reply_all()
+      request_calls[1].on_data(table.concat({
+        'From: Alice <alice@example.com>',
+        'To: Me <me@example.com>',
+        'Subject: Test',
+        '',
+        'Original body',
+      }, '\n'))
+
+      request_calls[2].on_data(table.concat({
+        'From: Me <me@example.com>',
+        'To: Alice <alice@example.com>',
+        'Subject: Re: Test',
+        '',
+        '> Original body',
+      }, '\n'))
+
+      local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+      for _, l in ipairs(lines) do
+        assert.is_falsy(l:match('^Cc:'))
+      end
       track(vim.api.nvim_get_current_buf())
     end)
   end)

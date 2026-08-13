@@ -1,6 +1,18 @@
 describe('himalaya.domain.email.headers', function()
   local headers = require('himalaya.domain.email.headers')
 
+  describe('extract_addresses', function()
+    it('extracts bare addresses from a mixed display-name list', function()
+      local addrs = headers.extract_addresses('Alice <alice@x.com>, "Bob B" <bob@x.com>, carol@x.com')
+      assert.same({ 'alice@x.com', 'bob@x.com', 'carol@x.com' }, addrs)
+    end)
+
+    it('returns an empty list for nil or empty input', function()
+      assert.same({}, headers.extract_addresses(nil))
+      assert.same({}, headers.extract_addresses(''))
+    end)
+  end)
+
   describe('parse', function()
     it('extracts known fields and finds the blank-line boundary', function()
       local lines = {

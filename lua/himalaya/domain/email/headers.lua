@@ -1,5 +1,20 @@
 local M = {}
 
+local EMAIL_PATTERN = '[%w.+_%-]+@[%w.%-]+%.[%w]+'
+
+--- Extract bare email addresses out of a header value, e.g. turning
+--- 'Alice <alice@x.com>, "Bob B" <bob@x.com>' into { 'alice@x.com',
+--- 'bob@x.com' }. Ignores display names - just finds address-shaped tokens.
+--- @param value? string
+--- @return string[]
+function M.extract_addresses(value)
+  local addrs = {}
+  for addr in (value or ''):gmatch(EMAIL_PATTERN) do
+    table.insert(addrs, addr)
+  end
+  return addrs
+end
+
 -- Header names we can format structurally, keyed lowercase (RFC 5322 header
 -- names are case-insensitive) and mapped to their display label.
 local KNOWN = {

@@ -11,6 +11,22 @@ local function context_email_id()
   return require('himalaya.domain.email').context_email_id()
 end
 
+--- Resolve cfg.own_email into a list of addresses for the given account.
+--- @param account string
+--- @return string[]
+local function own_email_addresses(account)
+  local val = require('himalaya.config').get().own_email
+  if type(val) == 'table' then
+    val = val[account]
+  end
+  if val == nil then
+    return {}
+  elseif type(val) == 'string' then
+    return { val }
+  end
+  return val
+end
+
 --- Set buffer content, replacing carriage returns and trailing blank line.
 --- @param content string
 local function set_buffer_content(content)
@@ -144,24 +160,74 @@ function M.reply()
 end
 
 --- Reply-all to current email.
--- himalaya v2's `message reply` has no reply-all equivalent at all (no
--- --all/-A flag, no way to pull in the original Cc list) - it only
+-- himalaya v2's `message reply` has no --all/-A flag of its own - it only
 -- "optionally derives recipients from Reply-To/From" per its own --help.
--- Falling back to the same single-recipient reply rather than refusing
--- outright, since a narrower Cc list is still useful and this isn't a
--- fully broken subsystem like thread view or HTML export - just log
--- clearly so the narrowed behavior isn't a silent surprise.
+-- Recovers the rest by reading the original message's To/Cc ourselves
+-- (same structured header parsing the reading buffer uses) and inserting a
+-- Cc: line into the reply template before it's opened, excluding whichever
+-- addresses the reply already resolved as From (this account) or To
+-- (avoids duplicating the primary recipient).
 function M.reply_all()
   local context = require('himalaya.state.context')
   local account, folder = context.resolve()
   local id = context_email_id()
-  log.warn('Reply-all is narrowed to reply: himalaya v2 has no --all equivalent, original Cc recipients are dropped')
+  local headers = require('himalaya.domain.email.headers')
+
   request.plain({
-    cmd = 'message reply %s --mailbox %q %s',
+    cmd = 'message read %s --mailbox %q %s',
     args = { account_flag(account), folder, id },
-    msg = 'Fetching reply template',
-    on_data = function(data)
-      open_write_buffer(string.format('reply all [%s]', id), data, account, folder, id, 'reply_all')
+    msg = 'Fetching original message',
+    on_data = function(orig_data)
+      local orig_headers = headers.parse(vim.split(orig_data:gsub('\r', ''), '\n'))
+      local candidates = {}
+      vim.list_extend(candidates, headers.extract_addresses(orig_headers.To))
+      vim.list_extend(candidates, headers.extract_addresses(orig_headers.Cc))
+
+      request.plain({
+        cmd = 'message reply %s --mailbox %q %s',
+        args = { account_flag(account), folder, id },
+        msg = 'Fetching reply template',
+        on_data = function(data)
+          local lines = vim.split(data:gsub('\r', ''), '\n')
+          local reply_headers, blank_idx = headers.parse(lines)
+
+          local exclude = {}
+          -- message reply's own template has no From: line to read (himalaya
+          -- doesn't resolve/stamp the sending address until send time), so
+          -- self-exclusion relies on cfg.own_email when configured.
+          for _, addr in ipairs(headers.extract_addresses(reply_headers.From)) do
+            exclude[addr:lower()] = true
+          end
+          for _, addr in ipairs(headers.extract_addresses(reply_headers.To)) do
+            exclude[addr:lower()] = true
+          end
+          for _, addr in ipairs(own_email_addresses(account)) do
+            exclude[addr:lower()] = true
+          end
+
+          local cc_list, seen = {}, {}
+          for _, addr in ipairs(candidates) do
+            local key = addr:lower()
+            if not exclude[key] and not seen[key] then
+              seen[key] = true
+              table.insert(cc_list, addr)
+            end
+          end
+
+          if #cc_list > 0 then
+            table.insert(lines, blank_idx, 'Cc: ' .. table.concat(cc_list, ', '))
+          end
+
+          open_write_buffer(
+            string.format('reply all [%s]', id),
+            table.concat(lines, '\n'),
+            account,
+            folder,
+            id,
+            'reply_all'
+          )
+        end,
+      })
     end,
   })
 end
