@@ -73,7 +73,8 @@ describe('himalaya.ui.reading', function()
   it('setup() registers reading keybinds', function()
     reading.setup(bufnr)
     local maps = vim.api.nvim_buf_get_keymap(bufnr, 'n')
-    local expected_keys = { 'gw', 'gr', 'gR', 'gf', 'ga', 'gA', 'gC', 'gM', 'gD', 'gb', 'gy', 'gW', ']]', '[[', '?' }
+    local expected_keys =
+      { 'gw', 'gr', 'gR', 'gf', 'ga', 'gA', 'gC', 'gM', 'gD', 'gb', 'gy', 'gW', 'gh', ']]', '[[', '?' }
     for _, key in ipairs(expected_keys) do
       local found = false
       for _, map in ipairs(maps) do
@@ -97,7 +98,7 @@ describe('himalaya.ui.reading', function()
     assert.is_truthy(vim.wo[winid].winbar:find('42'))
   end)
 
-  it('setup() registers exactly 18 normal-mode keybinds', function()
+  it('setup() registers exactly 19 normal-mode keybinds', function()
     reading.setup(bufnr)
     local maps = vim.api.nvim_buf_get_keymap(bufnr, 'n')
     local count = 0
@@ -106,9 +107,10 @@ describe('himalaya.ui.reading', function()
         count = count + 1
       end
     end
-    -- 18 = the base reading binds + gI (toggle HTML image rendering)
-    -- + gy/gW (yank / compose-to address under cursor)
-    assert.equals(18, count)
+    -- 19 = the base reading binds + gI (toggle HTML image rendering)
+    -- + gy/gW (yank / compose-to address under cursor) + gh (toggle
+    -- HTML-as-text view)
+    assert.equals(19, count)
   end)
 
   describe('navigate_email via keybinds', function()

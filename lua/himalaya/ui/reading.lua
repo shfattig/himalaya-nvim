@@ -108,6 +108,14 @@ function M.setup(bufnr)
     },
     {
       'n',
+      'gh',
+      function()
+        require('himalaya.domain.email.html_view').toggle()
+      end,
+      'email-toggle-html-text',
+    },
+    {
+      'n',
       'gi',
       function()
         require('himalaya.domain.email.image').toggle()

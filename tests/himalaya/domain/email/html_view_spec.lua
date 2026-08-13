@@ -1,0 +1,214 @@
+describe('himalaya.domain.email.html_view', function()
+  local html_view
+
+  before_each(function()
+    package.loaded['himalaya.domain.email.html_view'] = nil
+    html_view = require('himalaya.domain.email.html_view')
+  end)
+
+  describe('to_text', function()
+    it('strips tags and decodes entities', function()
+      local lines = html_view.to_text('<p>Hello &amp; welcome, <b>friend</b>!</p>')
+      assert.same({ 'Hello & welcome, **friend**!' }, lines)
+    end)
+
+    it('converts headings and paragraphs into separated lines', function()
+      local lines = html_view.to_text('<h1>Title</h1><p>Body one.</p><p>Body two.</p>')
+      assert.same({ '# Title', '', 'Body one.', '', 'Body two.' }, lines)
+    end)
+
+    it('converts links to "text (url)"', function()
+      local lines = html_view.to_text('<a href="https://x.com/y">Click here</a>')
+      assert.same({ 'Click here (https://x.com/y)' }, lines)
+    end)
+
+    it('falls back to the bare url when the link has no text', function()
+      local lines = html_view.to_text('<a href="https://x.com/y"></a>')
+      assert.same({ 'https://x.com/y' }, lines)
+    end)
+
+    it('converts list items to dashed lines', function()
+      local lines = html_view.to_text('<ul><li>One</li><li>Two</li></ul>')
+      assert.same({ '- One', '- Two' }, lines)
+    end)
+
+    it('drops script and style blocks entirely', function()
+      local lines = html_view.to_text('<style>.x{color:red}</style><script>alert(1)</script><p>Real content</p>')
+      assert.same({ 'Real content' }, lines)
+    end)
+
+    it('collapses runs of blank lines to at most one', function()
+      local lines = html_view.to_text('<p>A</p><br><br><br><p>B</p>')
+      for _, line in ipairs(lines) do
+        assert.is_falsy(line == '' and lines[1] == '')
+      end
+      local blank_run = 0
+      for _, line in ipairs(lines) do
+        if line == '' then
+          blank_run = blank_run + 1
+          assert.is_true(blank_run <= 1)
+        else
+          blank_run = 0
+        end
+      end
+    end)
+
+    it('trims leading and trailing blank lines', function()
+      local lines = html_view.to_text('<br><br><p>content</p><br><br>')
+      assert.are.equal('content', lines[1])
+      assert.are.equal('content', lines[#lines])
+    end)
+  end)
+
+  describe('fetch_html', function()
+    local captured
+
+    before_each(function()
+      captured = nil
+      package.loaded['himalaya.request'] = {
+        json = function(opts)
+          captured = opts
+        end,
+      }
+      package.loaded['himalaya.state.account'] = {
+        flag = function(acct)
+          return acct == '' and {} or { '--account', acct }
+        end,
+      }
+      package.loaded['himalaya.domain.email.html_view'] = nil
+      html_view = require('himalaya.domain.email.html_view')
+    end)
+
+    it('issues a message read --json request for the given id', function()
+      html_view.fetch_html('acct', 'INBOX', '42', function() end)
+      assert.is_not_nil(captured)
+      assert.is_truthy(captured.cmd:find('message read'))
+      assert.are.equal('42', captured.args[3])
+    end)
+
+    it('resolves the HTML part accounting for the 0-based -> 1-based index shift', function()
+      local result
+      html_view.fetch_html('acct', 'INBOX', '42', function(html)
+        result = html
+      end)
+      captured.on_data({
+        html_body = { 1 },
+        parts = {
+          { body = { Text = 'plain text part' } },
+          { body = { Html = '<p>html part</p>' } },
+        },
+      })
+      assert.are.equal('<p>html part</p>', result)
+    end)
+
+    it('calls back with nil when the message has no HTML part', function()
+      local result, called = 'unset', false
+      html_view.fetch_html('acct', 'INBOX', '42', function(html)
+        result = html
+        called = true
+      end)
+      captured.on_data({ html_body = {}, parts = {} })
+      assert.is_true(called)
+      assert.is_nil(result)
+    end)
+
+    it('calls back with nil on fetch error', function()
+      local result, called = 'unset', false
+      html_view.fetch_html('acct', 'INBOX', '42', function(html)
+        result = html
+        called = true
+      end)
+      captured.on_error()
+      assert.is_true(called)
+      assert.is_nil(result)
+    end)
+  end)
+
+  describe('toggle', function()
+    local bufnr
+
+    before_each(function()
+      package.loaded['himalaya.log'] = {
+        info = function() end,
+        err = function() end,
+      }
+      package.loaded['himalaya.domain.email.html_view'] = nil
+      html_view = require('himalaya.domain.email.html_view')
+
+      bufnr = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'Date:    Wed, 12 Aug 2026 10:00:00 -0600',
+        'From:    a@x.com',
+        'Delivered-To: a@x.com',
+        '',
+        'Original plain body',
+      })
+      vim.b[bufnr].himalaya_header_fold_range = { 3, 3 }
+      vim.b[bufnr].himalaya_account = 'acct'
+      vim.b[bufnr].himalaya_folder = 'INBOX'
+      vim.b[bufnr].himalaya_current_email_id = '42'
+    end)
+
+    after_each(function()
+      if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+        vim.api.nvim_buf_delete(bufnr, { force = true })
+      end
+    end)
+
+    it('is a no-op when required buffer context is missing', function()
+      local empty = vim.api.nvim_create_buf(false, true)
+      assert.has_no.errors(function()
+        html_view.toggle(empty)
+      end)
+      vim.api.nvim_buf_delete(empty, { force = true })
+    end)
+
+    it('replaces the body with converted HTML text, then restores it on second toggle', function()
+      package.loaded['himalaya.request'] = {
+        json = function(opts)
+          opts.on_data({
+            html_body = { 0 },
+            parts = { { body = { Html = '<p>Rendered <b>HTML</b> body</p>' } } },
+          })
+        end,
+      }
+      package.loaded['himalaya.state.account'] = {
+        flag = function()
+          return {}
+        end,
+      }
+      package.loaded['himalaya.domain.email.html_view'] = nil
+      html_view = require('himalaya.domain.email.html_view')
+
+      html_view.toggle(bufnr)
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('Rendered **HTML** body', lines[#lines])
+      assert.is_true(vim.b[bufnr].himalaya_html_view)
+
+      html_view.toggle(bufnr)
+      local restored = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('Original plain body', restored[#restored])
+      assert.is_falsy(vim.b[bufnr].himalaya_html_view)
+    end)
+
+    it('leaves the buffer untouched when the message has no HTML part', function()
+      package.loaded['himalaya.request'] = {
+        json = function(opts)
+          opts.on_data({ html_body = {}, parts = {} })
+        end,
+      }
+      package.loaded['himalaya.state.account'] = {
+        flag = function()
+          return {}
+        end,
+      }
+      package.loaded['himalaya.domain.email.html_view'] = nil
+      html_view = require('himalaya.domain.email.html_view')
+
+      html_view.toggle(bufnr)
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('Original plain body', lines[#lines])
+      assert.is_falsy(vim.b[bufnr].himalaya_html_view)
+    end)
+  end)
+end)
