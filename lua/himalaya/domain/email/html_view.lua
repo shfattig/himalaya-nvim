@@ -3,9 +3,13 @@
 -- get HTML onto disk for a headless-browser screenshot pipeline anymore.
 -- But `message read --json` still hands back the HTML part's raw text
 -- inline (parts[i].body.Html), which is enough to render something far
--- more useful than raw markup: a plain-text approximation, converted with
--- a small self-contained parser. No pandoc/w3m/etc - none are installed,
--- and adding one is a system-level (nixos) decision, not a plugin one.
+-- more useful than raw markup: a plain-text approximation.
+--
+-- Converted via pandoc (a real HTML parser, now installed at the system
+-- level - see home.nix) when it's available, since it handles arbitrary/
+-- malformed markup far better than regex ever could; the self-contained
+-- Lua parser below (M.to_text) still backs it as a fallback for machines
+-- where pandoc isn't installed, so `gh` never just breaks.
 local request = require('himalaya.request')
 local account_state = require('himalaya.state.account')
 local log = require('himalaya.log')
@@ -149,6 +153,32 @@ function M.fetch_html(account, folder, id, callback)
   })
 end
 
+--- Convert HTML to a lines[] text view. Prefers shelling out to pandoc
+--- (`-t markdown`, matching M.to_text's own **bold**/`# heading` style)
+--- when it's on PATH; falls back to the bespoke M.to_text parser above
+--- otherwise, or if pandoc unexpectedly fails/produces nothing.
+--- @param html string
+--- @param callback fun(lines: string[])
+function M.convert(html, callback)
+  if vim.fn.executable('pandoc') ~= 1 then
+    callback(M.to_text(html))
+    return
+  end
+  vim.system(
+    { 'pandoc', '-f', 'html', '-t', 'markdown', '--wrap=none' },
+    { text = true, stdin = html },
+    function(result)
+      vim.schedule(function()
+        if result.code ~= 0 or not result.stdout or vim.trim(result.stdout) == '' then
+          callback(M.to_text(html))
+          return
+        end
+        callback(tidy_lines(result.stdout))
+      end)
+    end
+  )
+end
+
 --- @param bufnr number
 --- @return number  1-indexed first body line (after the folded header block, if any)
 local function body_start_line(bufnr)
@@ -198,18 +228,22 @@ function M.toggle(bufnr)
       log.info('No HTML content in this message')
       return
     end
-    local converted = M.to_text(html)
-    if #converted == 0 then
-      log.info('HTML content converted to nothing displayable')
-      return
-    end
-    local start = body_start_line(bufnr)
-    local orig_body = vim.api.nvim_buf_get_lines(bufnr, start - 1, -1, false)
-    vim.bo[bufnr].modifiable = true
-    vim.api.nvim_buf_set_lines(bufnr, start - 1, -1, false, converted)
-    vim.bo[bufnr].modifiable = false
-    vim.b[bufnr].himalaya_html_view = true
-    vim.b[bufnr].himalaya_html_view_orig_body = orig_body
+    M.convert(html, function(converted)
+      if not vim.api.nvim_buf_is_valid(bufnr) then
+        return
+      end
+      if #converted == 0 then
+        log.info('HTML content converted to nothing displayable')
+        return
+      end
+      local start = body_start_line(bufnr)
+      local orig_body = vim.api.nvim_buf_get_lines(bufnr, start - 1, -1, false)
+      vim.bo[bufnr].modifiable = true
+      vim.api.nvim_buf_set_lines(bufnr, start - 1, -1, false, converted)
+      vim.bo[bufnr].modifiable = false
+      vim.b[bufnr].himalaya_html_view = true
+      vim.b[bufnr].himalaya_html_view_orig_body = orig_body
+    end)
   end)
 end
 

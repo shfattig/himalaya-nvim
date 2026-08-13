@@ -124,8 +124,73 @@ describe('himalaya.domain.email.html_view', function()
     end)
   end)
 
+  describe('convert', function()
+    local orig_executable, orig_system
+
+    before_each(function()
+      orig_executable = vim.fn.executable
+      orig_system = vim.system
+    end)
+
+    after_each(function()
+      vim.fn.executable = orig_executable
+      vim.system = orig_system
+    end)
+
+    it('falls back to the bespoke parser when pandoc is not on PATH', function()
+      vim.fn.executable = function(bin)
+        return bin == 'pandoc' and 0 or orig_executable(bin)
+      end
+      local result
+      html_view.convert('<p>Hello <b>there</b></p>', function(lines)
+        result = lines
+      end)
+      assert.same({ 'Hello **there**' }, result)
+    end)
+
+    it('uses pandoc output when available', function()
+      vim.fn.executable = function(bin)
+        return bin == 'pandoc' and 1 or orig_executable(bin)
+      end
+      local captured_cmd, captured_opts
+      vim.system = function(cmd, opts, cb)
+        captured_cmd, captured_opts = cmd, opts
+        cb({ code = 0, stdout = 'Hello there\n', stderr = '' })
+        return {}
+      end
+      local result
+      html_view.convert('<p>Hello <b>there</b></p>', function(lines)
+        result = lines
+      end)
+      vim.wait(10, function()
+        return result ~= nil
+      end)
+      assert.are.equal('pandoc', captured_cmd[1])
+      assert.are.equal('<p>Hello <b>there</b></p>', captured_opts.stdin)
+      assert.same({ 'Hello there' }, result)
+    end)
+
+    it('falls back to the bespoke parser when pandoc fails', function()
+      vim.fn.executable = function(bin)
+        return bin == 'pandoc' and 1 or orig_executable(bin)
+      end
+      vim.system = function(_cmd, _opts, cb)
+        cb({ code = 1, stdout = '', stderr = 'pandoc: error' })
+        return {}
+      end
+      local result
+      html_view.convert('<p>Hello <b>there</b></p>', function(lines)
+        result = lines
+      end)
+      vim.wait(10, function()
+        return result ~= nil
+      end)
+      assert.same({ 'Hello **there**' }, result)
+    end)
+  end)
+
   describe('toggle', function()
-    local bufnr
+    local bufnr, orig_executable
 
     before_each(function()
       package.loaded['himalaya.log'] = {
@@ -134,6 +199,14 @@ describe('himalaya.domain.email.html_view', function()
       }
       package.loaded['himalaya.domain.email.html_view'] = nil
       html_view = require('himalaya.domain.email.html_view')
+
+      -- Force the bespoke fallback path regardless of whether the host
+      -- running these tests happens to have pandoc installed, so these
+      -- assertions stay deterministic.
+      orig_executable = vim.fn.executable
+      vim.fn.executable = function(bin)
+        return bin == 'pandoc' and 0 or orig_executable(bin)
+      end
 
       bufnr = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
@@ -150,6 +223,7 @@ describe('himalaya.domain.email.html_view', function()
     end)
 
     after_each(function()
+      vim.fn.executable = orig_executable
       if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
         vim.api.nvim_buf_delete(bufnr, { force = true })
       end
