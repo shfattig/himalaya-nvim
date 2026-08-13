@@ -768,20 +768,58 @@ function M.delete(first_line, last_line)
   local cursor_line = listing_win_cur and vim.api.nvim_win_get_cursor(listing_win_cur)[1] or vim.fn.line('.')
   local context = require('himalaya.state.context')
   local account, folder = context.resolve()
+
+  -- Optimistically drop the row(s) from the listing right away instead of
+  -- waiting on the round-trip; restored below if the move fails. Only
+  -- applies to the flat listing, whose buffer is a 1:1 render of
+  -- himalaya_envelopes — thread-listing has no working CLI backend to
+  -- populate it at all (see thread_listing.lua's "Thread view is
+  -- unavailable" guard), so it keeps the old full-refresh path.
+  local _, listing_bufnr, listing_type = win.find_by_buftype({ 'listing', 'thread-listing' })
+  local undo_envelopes = nil
+  if listing_bufnr and listing_type == 'listing' then
+    local ok, envelopes = pcall(vim.api.nvim_buf_get_var, listing_bufnr, 'himalaya_envelopes')
+    if ok and envelopes then
+      local id_set = {}
+      for id in ids:gmatch('%S+') do
+        id_set[id] = true
+      end
+      local kept = {}
+      for _, env in ipairs(envelopes) do
+        if not id_set[tostring(env.id)] then
+          table.insert(kept, env)
+        end
+      end
+      if #kept ~= #envelopes then
+        undo_envelopes = envelopes
+        vim.api.nvim_buf_set_var(listing_bufnr, 'himalaya_envelopes', kept)
+        render_listing_buffer(listing_bufnr, kept)
+      end
+    end
+  end
+
   probe.cancel(function()
     request.plain({
       -- himalaya v2 has no `message delete` - deleting is moving to trash.
       cmd = 'message move %s --from %q --to %q %s',
       args = { account_flag(account), folder, cfg.trash_mailbox, ids },
       msg = 'Deleting email',
+      on_error = function()
+        if undo_envelopes and vim.api.nvim_buf_is_valid(listing_bufnr) then
+          vim.api.nvim_buf_set_var(listing_bufnr, 'himalaya_envelopes', undo_envelopes)
+          render_listing_buffer(listing_bufnr, undo_envelopes)
+        end
+      end,
       on_data = function()
         require('himalaya.events').emit('EmailDeleted', {
           account = account,
           folder = folder,
           ids = ids,
         })
-        saved_view = vim.fn.winsaveview()
-        refresh_listing(account, folder, { restore_cursor_line = cursor_line })
+        if not undo_envelopes then
+          saved_view = vim.fn.winsaveview()
+          refresh_listing(account, folder, { restore_cursor_line = cursor_line })
+        end
         if reading_win and vim.api.nvim_win_is_valid(reading_win) then
           pcall(vim.api.nvim_win_close, reading_win, true)
         end

@@ -644,6 +644,52 @@ describe('himalaya.domain.email (extended)', function()
       end
       assert.is_true(found)
     end)
+
+    describe('optimistic removal (himalaya_envelopes present)', function()
+      local function make_listing_buf_with_envelopes(ids)
+        local buf = make_listing_buf(ids)
+        local envelopes = {}
+        for _, id in ipairs(ids) do
+          envelopes[#envelopes + 1] = { id = id, subject = 'Subject ' .. id }
+        end
+        vim.b[buf].himalaya_envelopes = envelopes
+        return buf
+      end
+
+      it('removes the row from the buffer immediately, before the request completes', function()
+        local buf = track(make_listing_buf_with_envelopes({ 42, 43 }))
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+        email.delete()
+        -- Row is gone right away — no on_data call needed yet.
+        local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+        assert.are.equal(1, #lines)
+        assert.is_nil(lines[1]:find('42'))
+        assert.are.equal(1, #vim.b[buf].himalaya_envelopes)
+        assert.are.equal(43, vim.b[buf].himalaya_envelopes[1].id)
+      end)
+
+      it('does not trigger a full refresh_listing on success', function()
+        track(make_listing_buf_with_envelopes({ 42 }))
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+        email.delete()
+        captured_plain.on_data()
+        -- refresh_listing would call list_with -> json request; optimistic
+        -- removal already reflects the outcome, so no second round-trip.
+        assert.is_nil(captured_json)
+      end)
+
+      it('restores the row if the move fails', function()
+        local buf = track(make_listing_buf_with_envelopes({ 42, 43 }))
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+        email.delete()
+        assert.are.equal(1, #vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+
+        captured_plain.on_error()
+        local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+        assert.are.equal(2, #lines)
+        assert.are.equal(2, #vim.b[buf].himalaya_envelopes)
+      end)
+    end)
   end)
 
   describe('copy', function()
