@@ -848,6 +848,10 @@ function M.delete(first_line, last_line)
         end
       end,
       on_data = function()
+        -- The row already vanished optimistically when gD/dd was pressed;
+        -- confirm the move actually landed server-side now that it has.
+        local id_count = #vim.split(vim.trim(ids), '%s+')
+        log.info(string.format('Deleted %d %s', id_count, id_count == 1 and 'email' or 'emails'))
         require('himalaya.events').emit('EmailDeleted', {
           account = account,
           folder = folder,

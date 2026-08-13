@@ -645,6 +645,22 @@ describe('himalaya.domain.email (extended)', function()
       assert.is_true(found)
     end)
 
+    it('on_data notifies once the move actually lands', function()
+      track(make_listing_buf({ 42, 43 }))
+      email.delete(1, 2)
+      local notified
+      local orig_notify = vim.notify
+      vim.notify = function(msg, level)
+        notified = { msg = msg, level = level }
+      end
+      captured_plain.on_data()
+      vim.notify = orig_notify
+      assert.is_not_nil(notified)
+      assert.is_truthy(notified.msg:find('2'))
+      assert.is_truthy(notified.msg:find('emails'))
+      assert.are.equal(vim.log.levels.INFO, notified.level)
+    end)
+
     describe('optimistic removal (himalaya_envelopes present)', function()
       local function make_listing_buf_with_envelopes(ids)
         local buf = make_listing_buf(ids)
