@@ -661,6 +661,20 @@ describe('himalaya.domain.email (extended)', function()
       assert.are.equal(vim.log.levels.INFO, notified.level)
     end)
 
+    it('optimistically closes the reading pane, before the request resolves', function()
+      track(make_listing_buf({ 42 }))
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      email.read()
+      captured_plain.on_data('Subject: Test\n\nHello world\n')
+      assert.are.equal(2, #vim.api.nvim_tabpage_list_wins(0))
+
+      -- gD from the reading pane itself: current window is the reading split.
+      email.delete()
+      assert.are.equal(1, #vim.api.nvim_tabpage_list_wins(0))
+      -- Closed synchronously, before the move-to-trash request even resolves.
+      assert.is_not_nil(captured_plain)
+    end)
+
     describe('optimistic removal (himalaya_envelopes present)', function()
       local function make_listing_buf_with_envelopes(ids)
         local buf = make_listing_buf(ids)

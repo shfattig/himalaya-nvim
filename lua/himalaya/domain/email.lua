@@ -847,14 +847,23 @@ function M.delete(first_line, last_line)
     end
   end
 
-  -- Capture reading window before the async request so we can close it on success.
-  local reading_win = (not in_listing_buffer()) and vim.api.nvim_get_current_win() or nil
+  local was_in_reading_buffer = not in_listing_buffer()
   -- Get the cursor line from the listing window (not the reading buffer, which
   -- would give the wrong line when gD is pressed from the reading buffer).
   local listing_win_cur = win.find_by_buftype({ 'listing', 'thread-listing' })
   local cursor_line = listing_win_cur and vim.api.nvim_win_get_cursor(listing_win_cur)[1] or vim.fn.line('.')
   local context = require('himalaya.state.context')
   local account, folder = context.resolve()
+
+  -- Close the reading pane right away, same as the optimistic row removal
+  -- below - don't make the user wait on the round-trip to see it go away.
+  -- Unlike the listing row, this isn't reopened if the move then fails;
+  -- reopening a reading split with its exact prior state (header fold,
+  -- scroll position, HTML-view toggle) isn't worth the complexity for a
+  -- failure path the user can already recover from by re-reading the mail.
+  if was_in_reading_buffer then
+    pcall(vim.api.nvim_win_close, vim.api.nvim_get_current_win(), true)
+  end
 
   -- Optimistically drop the row(s) from the listing right away instead of
   -- waiting on the round-trip; restored below if the move fails. Only
@@ -918,9 +927,6 @@ function M.delete(first_line, last_line)
         if not undo_envelopes then
           saved_view = vim.fn.winsaveview()
           refresh_listing(account, folder, { restore_cursor_line = cursor_line })
-        end
-        if reading_win and vim.api.nvim_win_is_valid(reading_win) then
-          pcall(vim.api.nvim_win_close, reading_win, true)
         end
       end,
     })
