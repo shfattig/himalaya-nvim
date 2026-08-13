@@ -21,6 +21,8 @@ local resize_job = nil -- in-flight resize re-fetch job handle
 local resize_generation = 0 -- incremented on kill; stale callbacks check this
 local fetch_generation = 0 -- incremented on each list_with(); stale callbacks bail out
 local fetch_job = nil -- in-flight list_with job handle
+local progressive_fetch_active = false -- true while do_fetch's per-row fetches are still in flight
+local progressive_row_jobs = {} -- in-flight per-row job handles from do_fetch, for _cancel_jobs()
 local contact_cache_base = '' -- base string for cached contact completions
 local contact_cache_items = {} -- formatted items from last contact command
 
@@ -175,6 +177,26 @@ end
 local function envelope_list_cmd(cli_qry)
   local verb = cli_qry ~= '' and 'envelope search' or 'envelope list'
   return verb .. ' --mailbox %q %s --page-size %d --page %d %s'
+end
+
+-- himalaya's Gmail backend does one full HTTP round-trip per envelope
+-- internally regardless of page size (confirmed via RUST_LOG=debug - one
+-- "gmail message retrieval" cycle per envelope, sequentially, with no
+-- output until the whole batch finishes). Firing that many single-envelope
+-- requests ourselves instead gets about the same total wall-clock time
+-- (measured empirically) but paints progressively as each lands, rather
+-- than leaving the listing blank for the entire wait. Capped well under
+-- Gmail API rate limits for tall windows/large page sizes.
+local MAX_CONCURRENT_ROW_FETCHES = 10
+
+--- Placeholder shown for a listing row whose individual fetch hasn't
+--- resolved yet. renderer.render()/apply_highlights() already default
+--- every field defensively (env.subject or '', env.flags or {}, etc.), so
+--- an empty id plus a distinct subject renders cleanly and reads
+--- unmistakably as "not real content yet".
+--- @return table
+local function loading_placeholder()
+  return { id = '', subject = 'Loading…' }
 end
 
 --- Restore cursor position after a listing re-render.
@@ -403,9 +425,16 @@ end
 --- Called before any new CLI command to avoid database lock contention.
 function M._cancel_jobs()
   fetch_generation = fetch_generation + 1
+  progressive_fetch_active = false
   if fetch_job then
     job.kill_and_wait(fetch_job)
     fetch_job = nil
+  end
+  if #progressive_row_jobs > 0 then
+    for _, handle in ipairs(progressive_row_jobs) do
+      job.kill_and_wait(handle)
+    end
+    progressive_row_jobs = {}
   end
   if resize_timer then
     resize_timer:stop()
@@ -459,18 +488,6 @@ function M.list_with(account, folder, page, qry, sort)
   local search_target = saved_cursor_id
   local acct_flag = account_flag(account)
 
-  local function on_error()
-    fetch_job = nil
-    -- Clear loading indicator on failure
-    if vim.api.nvim_win_is_valid(listing_win) then
-      vim.api.nvim_win_call(listing_win, function()
-        if in_listing_buffer() and vim.wo.winbar:find('loading') then
-          vim.wo.winbar = ''
-        end
-      end)
-    end
-  end
-
   -- Fetch exactly the next page (ps-sized) in the background afterwards
   -- and merge it into the cache, so resize_listing can still slice extra
   -- rows without a network round trip. Doesn't touch the visible buffer,
@@ -497,30 +514,128 @@ function M.list_with(account, folder, page, qry, sort)
     })
   end
 
-  -- Fetch exactly the requested display page (ps-sized) so the listing
-  -- paints as fast as possible, then prime the next page in the
-  -- background (see prime_next_page).
+  -- Fetch the requested display page as `ps` separate single-envelope
+  -- requests (bounded by MAX_CONCURRENT_ROW_FETCHES) instead of one
+  -- `ps`-sized batch call, painting each row as it lands rather than
+  -- leaving the listing blank for the entire wait. on_list_with() still
+  -- runs exactly once, on completion, with the real assembled data -
+  -- everything past this function (cache merge, probe, event emission,
+  -- title/cursor) is unchanged from the single-batch path.
   local function do_fetch(fetch_page)
-    fetch_job = request.json({
-      cmd = envelope_list_cmd(cli_qry),
-      unwrap = 'envelopes',
-      args = { folder, acct_flag, ps, fetch_page, cli_qry },
-      msg = string.format('Fetching %s envelopes', folder),
-      is_stale = function()
-        return my_gen ~= fetch_generation
-      end,
-      on_error = on_error,
-      on_data = function(data)
-        fetch_job = nil
-        if not vim.api.nvim_win_is_valid(listing_win) then
-          return
+    progressive_fetch_active = true
+
+    if not vim.api.nvim_win_is_valid(listing_win) then
+      progressive_fetch_active = false
+      return
+    end
+
+    -- First-ever open (no listing buffer exists anywhere yet) is the only
+    -- case that actually needs progressive painting: there's nothing on
+    -- screen for the keypress to visibly affect until a row resolves, so
+    -- take over listing_win with a placeholder buffer right away and paint
+    -- each row into it as it lands. When a listing is already showing
+    -- (paging, folder switch, ...), that content stays exactly as before -
+    -- the "loading..." winbar above already covers it, and replacing good
+    -- content with placeholder rows mid-refresh would be a step backwards.
+    -- Either way the fetch itself is still parallel/bounded underneath,
+    -- for the same total-time win - only the visible painting differs.
+    local existing_bt = vim.b[vim.api.nvim_win_get_buf(listing_win)].himalaya_buffer_type
+    local show_progress = existing_bt ~= 'listing' and existing_bt ~= 'thread-listing'
+    if show_progress then
+      vim.api.nvim_win_call(listing_win, function()
+        local bufnr = vim.api.nvim_create_buf(true, true)
+        vim.api.nvim_win_set_buf(listing_win, bufnr)
+        vim.b[bufnr].himalaya_buffer_type = 'listing'
+        vim.bo[bufnr].filetype = 'himalaya-email-listing'
+        vim.bo[bufnr].modified = false
+      end)
+    end
+
+    local page_data = {}
+    local slot_resolved = {} -- [i] = true once row i has a real envelope
+    for i = 1, ps do
+      page_data[i] = loading_placeholder()
+    end
+    if show_progress then
+      render_listing_buffer(vim.api.nvim_win_get_buf(listing_win), page_data)
+    end
+
+    local next_row = 1
+    local in_flight = 0
+    local remaining = ps
+    local any_row_errored = false
+    local launch_next -- forward-declared: settle_row and launch_next call each other
+
+    local function finish()
+      progressive_fetch_active = false
+      progressive_row_jobs = {}
+      local final_data = {}
+      for i = 1, ps do
+        if slot_resolved[i] then
+          final_data[#final_data + 1] = page_data[i]
         end
-        vim.api.nvim_win_call(listing_win, function()
-          on_list_with(account, folder, fetch_page, ps, qry, sort, data, (fetch_page - 1) * ps)
-        end)
-        prime_next_page(fetch_page + 1)
-      end,
-    })
+      end
+      if #final_data == 0 and any_row_errored then
+        log.err(string.format('Fetching %s envelopes failed', folder))
+      end
+      if not vim.api.nvim_win_is_valid(listing_win) then
+        return
+      end
+      vim.api.nvim_win_call(listing_win, function()
+        on_list_with(account, folder, fetch_page, ps, qry, sort, final_data, (fetch_page - 1) * ps)
+      end)
+      prime_next_page(fetch_page + 1)
+    end
+
+    local function settle_row(row, envelope, errored)
+      in_flight = in_flight - 1
+      remaining = remaining - 1
+      if errored then
+        any_row_errored = true
+      end
+      if envelope then
+        page_data[row] = envelope
+        slot_resolved[row] = true
+      end
+      if show_progress and vim.api.nvim_win_is_valid(listing_win) then
+        render_listing_buffer(vim.api.nvim_win_get_buf(listing_win), page_data)
+      end
+      if remaining == 0 then
+        finish()
+      else
+        launch_next()
+      end
+    end
+
+    launch_next = function()
+      while in_flight < MAX_CONCURRENT_ROW_FETCHES and next_row <= ps do
+        local row = next_row
+        next_row = next_row + 1
+        in_flight = in_flight + 1
+        local handle = request.json({
+          cmd = envelope_list_cmd(cli_qry),
+          unwrap = 'envelopes',
+          args = { folder, acct_flag, 1, (fetch_page - 1) * ps + row, cli_qry },
+          silent = true,
+          is_stale = function()
+            return my_gen ~= fetch_generation
+          end,
+          on_error = function()
+            settle_row(row, nil, true)
+          end,
+          on_data = function(data)
+            settle_row(row, data[1], false)
+          end,
+        })
+        progressive_row_jobs[#progressive_row_jobs + 1] = handle
+      end
+    end
+
+    if ps == 0 then
+      finish()
+    else
+      launch_next()
+    end
   end
 
   -- Search: page through results with doubled page size (same as normal
@@ -1538,7 +1653,7 @@ end
 --- Used by the sync module to avoid database lock contention.
 --- @return boolean
 function M.is_busy()
-  return fetch_job ~= nil or resize_job ~= nil
+  return fetch_job ~= nil or resize_job ~= nil or progressive_fetch_active
 end
 
 --- Test-only accessor for mark_envelope_seen.

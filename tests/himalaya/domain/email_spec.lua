@@ -200,7 +200,13 @@ end)
 
 describe('himalaya.domain.email (extended)', function()
   local email
-  local captured_json, captured_plain
+  -- captured_json is the most recent request.json() call - fine for tests
+  -- that only check request shape (cmd/args/is_stale), since M.list_with's
+  -- do_fetch now fires one request.json() call per listing row rather than
+  -- one per page (see the progressive-fetch rewrite). Tests that need to
+  -- drive the fetch to completion use captured_json_calls instead, to
+  -- resolve every row, not just whichever happened to be captured last.
+  local captured_json, captured_json_calls, captured_plain
   local job_kill_count
   local emitted_events
 
@@ -236,6 +242,7 @@ describe('himalaya.domain.email (extended)', function()
     package.loaded['himalaya.config'] = nil
 
     captured_json = nil
+    captured_json_calls = {}
     captured_plain = nil
     job_kill_count = 0
     emitted_events = {}
@@ -249,6 +256,7 @@ describe('himalaya.domain.email (extended)', function()
     package.loaded['himalaya.request'] = {
       json = function(opts)
         captured_json = opts
+        captured_json_calls[#captured_json_calls + 1] = opts
         return { kill = function() end }
       end,
       plain = function(opts)
@@ -442,12 +450,28 @@ describe('himalaya.domain.email (extended)', function()
       assert.truthy(captured_json.cmd:find('envelope list'))
     end)
 
-    it('on_error clears loading winbar', function()
+    it('replaces the loading winbar with real headers once every row settles', function()
       track(make_listing_buf({ 1 }))
       vim.wo.winbar = '%#Comment# loading...%*'
       email.list_with('acct', 'INBOX', 1, '')
-      captured_json.on_error()
-      assert.are.equal('', vim.wo.winbar)
+      assert.is_true(#captured_json_calls > 0)
+      -- Every row errors (simulates total fetch failure) - on_list_with()
+      -- still runs exactly once, on_error()'s callback replaces the
+      -- winbar with real (empty-folder) headers, not just clearing it.
+      -- Concurrency is bounded (MAX_CONCURRENT_ROW_FETCHES), so resolving
+      -- an early row dynamically queues another - keep draining forward
+      -- through captured_json_calls as it grows, rather than a fixed
+      -- count, until nothing new is left (prime_next_page's own trailing
+      -- request.json() call has no on_error field, hence the guard).
+      local i = 1
+      while i <= #captured_json_calls do
+        local call = captured_json_calls[i]
+        if call.on_error then
+          call.on_error()
+        end
+        i = i + 1
+      end
+      assert.is_falsy(vim.wo.winbar:find('loading'))
     end)
 
     it('stale check returns true after new list_with', function()
@@ -457,6 +481,82 @@ describe('himalaya.domain.email (extended)', function()
       email.list_with('acct', 'INBOX', 2, '')
       assert.is_true(first.is_stale())
       assert.is_false(captured_json.is_stale())
+    end)
+  end)
+
+  describe('list_with progressive fetch', function()
+    -- do_fetch() now fires one request.json() call per listing row
+    -- (page-size 1 each) instead of one call for the whole page, so it can
+    -- paint rows as they land instead of leaving the listing blank for the
+    -- whole multi-second wait - see the do_fetch rewrite. ps in this
+    -- headless test env is winheight(0)-1 = 21 (well above
+    -- MAX_CONCURRENT_ROW_FETCHES = 10), so these assertions exercise real
+    -- queuing/backfill behavior, not just "one request happened".
+    local function make_plain_buf()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_set_current_buf(buf)
+      return buf
+    end
+
+    it(
+      'on first open (no existing listing buffer), paints placeholder rows immediately, capped at MAX_CONCURRENT_ROW_FETCHES',
+      function()
+        track(make_plain_buf())
+        vim.wo.winbar = ''
+        email.list_with('acct', 'INBOX', 1, '')
+        assert.are.equal(10, #captured_json_calls)
+        local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+        local found_loading = false
+        for _, l in ipairs(lines) do
+          if l:find('Loading') then
+            found_loading = true
+          end
+        end
+        assert.is_true(found_loading)
+      end
+    )
+
+    it('fills a row in and launches the next queued one as a slot frees up', function()
+      track(make_plain_buf())
+      vim.wo.winbar = ''
+      email.list_with('acct', 'INBOX', 1, '')
+      local launched_before = #captured_json_calls
+      assert.are.equal(10, launched_before)
+
+      captured_json_calls[1].on_data({ { id = '100', subject = 'Real subject' } })
+
+      assert.are.equal(launched_before + 1, #captured_json_calls)
+      local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+      local found_real = false
+      for _, l in ipairs(lines) do
+        if l:find('Real subject') then
+          found_real = true
+        end
+      end
+      assert.is_true(found_real)
+    end)
+
+    it('does not repaint an already-visible listing while refreshing (paging/folder switch)', function()
+      -- make_listing_buf already sets himalaya_buffer_type = 'listing', so
+      -- this is the "already showing a listing" case, not first-open.
+      track(make_listing_buf({ 1 }))
+      local before = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+      email.list_with('acct', 'INBOX', 1, '')
+      -- Rows still fetched in parallel underneath...
+      assert.are.equal(10, #captured_json_calls)
+      -- ...but the buffer is untouched until on_list_with() runs at the
+      -- end - no placeholder rows painted over the existing content.
+      local after = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+      assert.same(before, after)
+    end)
+
+    it('_cancel_jobs resets progressive-fetch state so is_busy() clears', function()
+      track(make_plain_buf())
+      vim.wo.winbar = ''
+      email.list_with('acct', 'INBOX', 1, '')
+      assert.is_true(email.is_busy())
+      email._cancel_jobs()
+      assert.is_false(email.is_busy())
     end)
   end)
 
@@ -550,12 +650,14 @@ describe('himalaya.domain.email (extended)', function()
   end)
 
   describe('_cancel_jobs', function()
-    it('kills fetch_job when present', function()
+    it('kills every in-flight per-row fetch job', function()
       track(make_listing_buf({ 1 }))
       email.list_with('acct', 'INBOX', 1, '')
+      local jobs_launched = #captured_json_calls
+      assert.is_true(jobs_launched > 0)
       job_kill_count = 0
       email._cancel_jobs()
-      assert.are.equal(1, job_kill_count)
+      assert.are.equal(jobs_launched, job_kill_count)
     end)
   end)
 
