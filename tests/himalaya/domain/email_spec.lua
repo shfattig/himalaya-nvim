@@ -705,6 +705,38 @@ describe('himalaya.domain.email (extended)', function()
         assert.are.equal(2, #lines)
         assert.are.equal(2, #vim.b[buf].himalaya_envelopes)
       end)
+
+      it('names the subject in the notification for a single delete', function()
+        track(make_listing_buf_with_envelopes({ 42, 43 }))
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+        email.delete()
+        local notified
+        local orig_notify = vim.notify
+        vim.notify = function(msg, level)
+          notified = { msg = msg, level = level }
+        end
+        captured_plain.on_data()
+        vim.notify = orig_notify
+        assert.are.equal('Deleted email: "Subject 42"', notified.msg)
+        assert.are.equal(vim.log.levels.INFO, notified.level)
+      end)
+
+      it('lists subjects for a multi-delete, trimming long ones', function()
+        local buf = make_listing_buf_with_envelopes({ 42, 43 })
+        local envelopes = vim.api.nvim_buf_get_var(buf, 'himalaya_envelopes')
+        envelopes[2].subject = string.rep('x', 50)
+        vim.api.nvim_buf_set_var(buf, 'himalaya_envelopes', envelopes)
+        track(buf)
+        email.delete(1, 2)
+        local notified
+        local orig_notify = vim.notify
+        vim.notify = function(msg, level)
+          notified = { msg = msg, level = level }
+        end
+        captured_plain.on_data()
+        vim.notify = orig_notify
+        assert.are.equal('Deleted 2 emails: "Subject 42", "' .. string.rep('x', 39) .. '…"', notified.msg)
+      end)
     end)
   end)
 

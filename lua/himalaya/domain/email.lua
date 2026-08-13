@@ -777,6 +777,56 @@ function M.read()
   end)
 end
 
+--- @param s? string
+--- @param max? number
+--- @return string?
+local function trim_subject(s, max)
+  max = max or 40
+  s = vim.trim(s or '')
+  if s == '' then
+    return nil
+  end
+  if #s > max then
+    return s:sub(1, max - 1) .. '…'
+  end
+  return s
+end
+
+--- Build the "Deleted ..." notification text, including subject lines when
+--- known (only available when deleting from the flat listing - see
+--- subject_by_id below). Falls back to a bare count otherwise.
+--- @param id_list string[]
+--- @param subject_by_id? table<string, string>
+--- @return string
+local function format_deleted_message(id_list, subject_by_id)
+  local id_count = #id_list
+  local plural = id_count == 1 and 'email' or 'emails'
+  local subjects = {}
+  if subject_by_id then
+    for _, id in ipairs(id_list) do
+      local subj = trim_subject(subject_by_id[id])
+      if subj then
+        subjects[#subjects + 1] = subj
+      end
+    end
+  end
+  if #subjects == 0 then
+    return string.format('Deleted %d %s', id_count, plural)
+  end
+  if id_count == 1 then
+    return string.format('Deleted email: "%s"', subjects[1])
+  end
+  local shown = {}
+  for i = 1, math.min(3, #subjects) do
+    shown[i] = string.format('"%s"', subjects[i])
+  end
+  local extra = id_count - #shown
+  if extra > 0 then
+    return string.format('Deleted %d %s: %s, +%d more', id_count, plural, table.concat(shown, ', '), extra)
+  end
+  return string.format('Deleted %d %s: %s', id_count, plural, table.concat(shown, ', '))
+end
+
 --- Delete email(s). Supports visual range via first_line/last_line.
 --- @param first_line? number
 --- @param last_line? number
@@ -814,6 +864,10 @@ function M.delete(first_line, last_line)
   -- unavailable" guard), so it keeps the old full-refresh path.
   local _, listing_bufnr, listing_type = win.find_by_buftype({ 'listing', 'thread-listing' })
   local undo_envelopes = nil
+  -- Subjects of the envelope(s) being deleted, keyed by id - only known when
+  -- deleting from the flat listing (see the comment above); the delete
+  -- notification falls back to a bare count when this stays nil.
+  local subject_by_id = nil
   if listing_bufnr and listing_type == 'listing' then
     local ok, envelopes = pcall(vim.api.nvim_buf_get_var, listing_bufnr, 'himalaya_envelopes')
     if ok and envelopes then
@@ -821,9 +875,13 @@ function M.delete(first_line, last_line)
       for id in ids:gmatch('%S+') do
         id_set[id] = true
       end
+      subject_by_id = {}
       local kept = {}
       for _, env in ipairs(envelopes) do
-        if not id_set[tostring(env.id)] then
+        local id_str = tostring(env.id)
+        if id_set[id_str] then
+          subject_by_id[id_str] = env.subject
+        else
           table.insert(kept, env)
         end
       end
@@ -850,8 +908,8 @@ function M.delete(first_line, last_line)
       on_data = function()
         -- The row already vanished optimistically when gD/dd was pressed;
         -- confirm the move actually landed server-side now that it has.
-        local id_count = #vim.split(vim.trim(ids), '%s+')
-        log.info(string.format('Deleted %d %s', id_count, id_count == 1 and 'email' or 'emails'))
+        local id_list = vim.split(vim.trim(ids), '%s+')
+        log.info(format_deleted_message(id_list, subject_by_id))
         require('himalaya.events').emit('EmailDeleted', {
           account = account,
           folder = folder,
