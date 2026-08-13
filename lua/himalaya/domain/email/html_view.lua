@@ -208,6 +208,23 @@ local function body_start_line(bufnr)
   return 1
 end
 
+--- Splice converted HTML lines into the reading buffer's body in place of
+--- whatever's there now, stashing the replaced lines so a later M.toggle()
+--- (or a second M.prefer_if_available(), which no-ops once this has run)
+--- can restore them. Shared by M.toggle()'s switch-to-html branch and
+--- M.prefer_if_available()'s auto-upgrade.
+--- @param bufnr number
+--- @param converted string[]
+local function apply_html_view(bufnr, converted)
+  local start = body_start_line(bufnr)
+  local orig_body = vim.api.nvim_buf_get_lines(bufnr, start - 1, -1, false)
+  vim.bo[bufnr].modifiable = true
+  vim.api.nvim_buf_set_lines(bufnr, start - 1, -1, false, converted)
+  vim.bo[bufnr].modifiable = false
+  vim.b[bufnr].himalaya_html_view = true
+  vim.b[bufnr].himalaya_html_view_orig_body = orig_body
+end
+
 --- Toggle the reading buffer's body between its original plain-text
 --- rendering and an HTML-derived text view, converted from the message's
 --- HTML part on first toggle (cached on the buffer so re-toggling is
@@ -255,13 +272,51 @@ function M.toggle(bufnr)
         log.info('HTML content converted to nothing displayable')
         return
       end
-      local start = body_start_line(bufnr)
-      local orig_body = vim.api.nvim_buf_get_lines(bufnr, start - 1, -1, false)
-      vim.bo[bufnr].modifiable = true
-      vim.api.nvim_buf_set_lines(bufnr, start - 1, -1, false, converted)
-      vim.bo[bufnr].modifiable = false
-      vim.b[bufnr].himalaya_html_view = true
-      vim.b[bufnr].himalaya_html_view_orig_body = orig_body
+      apply_html_view(bufnr, converted)
+    end)
+  end)
+end
+
+--- Silently upgrade a freshly-opened reading buffer to its HTML-converted
+--- view, if it has one and hasn't already been toggled - matching how
+--- webmail clients render multipart/alternative mail by default (RFC 2046
+--- §5.1.4 orders alternative parts least-to-most-preferred, so a later
+--- HTML part is the sender's own intended "best" rendering; USPS-style
+--- senders also routinely leave the plain part sparse/generic compared to
+--- the HTML, or omit it entirely). Unlike M.toggle(), failure is silent -
+--- no HTML part, or a conversion that yields nothing, is the ordinary case
+--- for plain-text mail and isn't worth a notification on every open.
+--- @param bufnr number
+function M.prefer_if_available(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) or vim.b[bufnr].himalaya_html_view then
+    return
+  end
+  local account = vim.b[bufnr].himalaya_account
+  local folder = vim.b[bufnr].himalaya_folder
+  local id = vim.b[bufnr].himalaya_current_email_id
+  if not (account and folder and id) then
+    return
+  end
+
+  -- Reused reading buffers (see email.lua's M.read()) get repopulated for a
+  -- new email in place - reconfirm this is still the same email and it's
+  -- still un-toggled before applying a slow async result to what might by
+  -- then be a completely different message.
+  local function still_current()
+    return vim.api.nvim_buf_is_valid(bufnr)
+      and not vim.b[bufnr].himalaya_html_view
+      and vim.b[bufnr].himalaya_current_email_id == id
+  end
+
+  M.fetch_html(account, folder, id, function(html)
+    if not html or not still_current() then
+      return
+    end
+    M.convert(html, function(converted)
+      if #converted == 0 or not still_current() then
+        return
+      end
+      apply_html_view(bufnr, converted)
     end)
   end)
 end

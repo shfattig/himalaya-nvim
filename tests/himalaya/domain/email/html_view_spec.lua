@@ -285,4 +285,122 @@ describe('himalaya.domain.email.html_view', function()
       assert.is_falsy(vim.b[bufnr].himalaya_html_view)
     end)
   end)
+
+  describe('prefer_if_available', function()
+    local bufnr, orig_executable
+
+    before_each(function()
+      package.loaded['himalaya.log'] = {
+        info = function() end,
+        err = function() end,
+      }
+      package.loaded['himalaya.state.account'] = {
+        flag = function()
+          return {}
+        end,
+      }
+      package.loaded['himalaya.domain.email.html_view'] = nil
+
+      orig_executable = vim.fn.executable
+      vim.fn.executable = function(bin)
+        return bin == 'pandoc' and 0 or orig_executable(bin)
+      end
+
+      bufnr = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'Date:    Wed, 12 Aug 2026 10:00:00 -0600',
+        '',
+        'Original plain body',
+      })
+      vim.b[bufnr].himalaya_header_fold_range = { 1, 1 }
+      vim.b[bufnr].himalaya_account = 'acct'
+      vim.b[bufnr].himalaya_folder = 'INBOX'
+      vim.b[bufnr].himalaya_current_email_id = '42'
+    end)
+
+    after_each(function()
+      vim.fn.executable = orig_executable
+      if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+        vim.api.nvim_buf_delete(bufnr, { force = true })
+      end
+    end)
+
+    local function stub_html(html)
+      package.loaded['himalaya.request'] = {
+        json = function(opts)
+          if html then
+            opts.on_data({ html_body = { 0 }, parts = { { body = { Html = html } } } })
+          else
+            opts.on_data({ html_body = {}, parts = {} })
+          end
+        end,
+      }
+      package.loaded['himalaya.domain.email.html_view'] = nil
+      html_view = require('himalaya.domain.email.html_view')
+    end
+
+    it('silently applies the HTML view when an HTML part exists', function()
+      stub_html('<p>Rendered <b>HTML</b> body</p>')
+      html_view.prefer_if_available(bufnr)
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('Rendered **HTML** body', lines[#lines])
+      assert.is_true(vim.b[bufnr].himalaya_html_view)
+    end)
+
+    it('silently no-ops when there is no HTML part (no notification)', function()
+      stub_html(nil)
+      local notified = false
+      package.loaded['himalaya.log'].info = function()
+        notified = true
+      end
+      html_view.prefer_if_available(bufnr)
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('Original plain body', lines[#lines])
+      assert.is_falsy(vim.b[bufnr].himalaya_html_view)
+      assert.is_false(notified)
+    end)
+
+    it('no-ops when already toggled to the HTML view', function()
+      vim.b[bufnr].himalaya_html_view = true
+      local called = false
+      package.loaded['himalaya.request'] = {
+        json = function()
+          called = true
+        end,
+      }
+      package.loaded['himalaya.domain.email.html_view'] = nil
+      html_view = require('himalaya.domain.email.html_view')
+      html_view.prefer_if_available(bufnr)
+      assert.is_false(called)
+    end)
+
+    it('no-ops when required buffer context is missing', function()
+      local empty = vim.api.nvim_create_buf(false, true)
+      assert.has_no.errors(function()
+        html_view.prefer_if_available(empty)
+      end)
+      vim.api.nvim_buf_delete(empty, { force = true })
+    end)
+
+    it('discards a stale result if the buffer now shows a different email', function()
+      package.loaded['himalaya.request'] = {
+        json = function(opts)
+          -- Simulate the buffer having been reused for a different email
+          -- while this "network" call was in flight.
+          vim.b[bufnr].himalaya_current_email_id = '99'
+          opts.on_data({
+            html_body = { 0 },
+            parts = { { body = { Html = '<p>Stale content</p>' } } },
+          })
+        end,
+      }
+      package.loaded['himalaya.domain.email.html_view'] = nil
+      html_view = require('himalaya.domain.email.html_view')
+
+      html_view.prefer_if_available(bufnr)
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      assert.are.equal('Original plain body', lines[#lines])
+      assert.is_falsy(vim.b[bufnr].himalaya_html_view)
+    end)
+  end)
 end)

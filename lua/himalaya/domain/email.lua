@@ -726,6 +726,13 @@ function M.read()
         vim.b.himalaya_folder = folder
         vim.b.himalaya_current_email_id = current_id
         vim.b.himalaya_image_png = nil
+        -- Reused reading buffers (see `reused` above) carry vim.b state
+        -- across emails - clear the previous email's HTML-toggle state so
+        -- it doesn't leak into this one (stale orig_body restored on `gh`,
+        -- or M.prefer_if_available() below wrongly no-op'ing because it
+        -- looks already-toggled).
+        vim.b.himalaya_html_view = nil
+        vim.b.himalaya_html_view_orig_body = nil
         vim.b.himalaya_header_fold_range = fold_start and { fold_start, fold_end } or nil
         vim.bo.filetype = 'himalaya-email-reading'
         vim.bo.modified = false
@@ -736,6 +743,13 @@ function M.read()
         local cur_buf = vim.api.nvim_get_current_buf()
         local image_mod = require('himalaya.domain.email.image')
         image_mod.prefetch(cur_buf, account, folder, current_id)
+
+        -- Prefer HTML by default once it's ready, same as webmail clients -
+        -- shows the fast plain-text render above immediately, then upgrades
+        -- in place a moment later rather than blocking the initial paint on
+        -- the slower of the two requests. Silent no-op for ordinary
+        -- plain-text-only mail (the common case).
+        require('himalaya.domain.email.html_view').prefer_if_available(cur_buf)
 
         -- Auto-render as image when image_mode is enabled.
         local render_cfg = require('himalaya.config').get().render_html

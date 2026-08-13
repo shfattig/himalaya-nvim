@@ -229,8 +229,10 @@ describe('himalaya.domain.email (extended)', function()
   end
 
   before_each(function()
-    -- Clear email module so it re-captures upvalues from stubs
+    -- Clear email module (and html_view, which M.read() now calls into) so
+    -- both re-capture upvalues from this test's fresh request stub below.
     package.loaded['himalaya.domain.email'] = nil
+    package.loaded['himalaya.domain.email.html_view'] = nil
     package.loaded['himalaya.config'] = nil
 
     captured_json = nil
@@ -1173,6 +1175,69 @@ describe('himalaya.domain.email (extended)', function()
       captured_plain.on_data('line1\nline2\n')
       local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
       assert.are_not.equal('', lines[#lines])
+    end)
+
+    it('also fetches HTML in the background for the preferred-view upgrade', function()
+      track(make_listing_buf({ 42 }))
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      email.read()
+      captured_plain.on_data('Subject: Test\n\nHello world\n')
+      assert.is_not_nil(captured_json)
+      assert.truthy(captured_json.cmd:find('message read'))
+      assert.are.equal('42', captured_json.args[3])
+    end)
+
+    it('upgrades the initial body to HTML once the HTML fetch resolves', function()
+      local orig_executable = vim.fn.executable
+      vim.fn.executable = function(bin)
+        return bin == 'pandoc' and 0 or orig_executable(bin)
+      end
+
+      track(make_listing_buf({ 42 }))
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      email.read()
+      captured_plain.on_data('Subject: Test\n\nOriginal plain body')
+      assert.is_not_nil(captured_json)
+      captured_json.on_data({
+        html_body = { 0 },
+        parts = { { body = { Html = '<p>Rendered <b>HTML</b> body</p>' } } },
+      })
+      local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+      assert.are.equal('Rendered **HTML** body', lines[#lines])
+      assert.is_true(vim.b.himalaya_html_view)
+
+      vim.fn.executable = orig_executable
+    end)
+
+    it('leaves the plain body alone when the message has no HTML part', function()
+      track(make_listing_buf({ 42 }))
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      email.read()
+      captured_plain.on_data('Subject: Test\n\nOriginal plain body')
+      captured_json.on_data({ html_body = {}, parts = {} })
+      local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+      assert.are.equal('Original plain body', lines[#lines])
+      assert.is_falsy(vim.b.himalaya_html_view)
+    end)
+
+    it('clears stale HTML-toggle state when a reused reading buffer shows a new email', function()
+      local listing_win = vim.api.nvim_get_current_win()
+      track(make_listing_buf({ 42, 43 }))
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      email.read()
+      captured_plain.on_data('Subject: First\n\nFirst body')
+      local reading_buf = vim.api.nvim_get_current_buf()
+      -- Simulate this buffer having ended up in the HTML-toggled state.
+      vim.b[reading_buf].himalaya_html_view = true
+      vim.b[reading_buf].himalaya_html_view_orig_body = { 'stale plain body' }
+
+      vim.api.nvim_set_current_win(listing_win)
+      vim.api.nvim_win_set_cursor(0, { 2, 0 })
+      email.read()
+      captured_plain.on_data('Subject: Second\n\nSecond body')
+
+      assert.is_falsy(vim.b[reading_buf].himalaya_html_view)
+      assert.is_nil(vim.b[reading_buf].himalaya_html_view_orig_body)
     end)
 
     it('reuses existing reading window', function()
