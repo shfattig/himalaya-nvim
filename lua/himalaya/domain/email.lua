@@ -464,7 +464,11 @@ function M.list_with(account, folder, page, qry, sort)
   fetch_generation = fetch_generation + 1
   local my_gen = fetch_generation
 
-  -- Show loading indicator while fetching
+  -- Show loading indicator while fetching. Saved so a failed batched fetch
+  -- (do_fetch's not-show_progress branch below) can restore it verbatim -
+  -- the listing content underneath was never touched, so the old winbar is
+  -- still exactly correct.
+  local prev_winbar = vim.wo.winbar
   if in_listing_buffer() then
     vim.wo.winbar = '%#Comment# loading...%*'
   end
@@ -537,10 +541,52 @@ function M.list_with(account, folder, page, qry, sort)
     -- (paging, folder switch, ...), that content stays exactly as before -
     -- the "loading..." winbar above already covers it, and replacing good
     -- content with placeholder rows mid-refresh would be a step backwards.
-    -- Either way the fetch itself is still parallel/bounded underneath,
-    -- for the same total-time win - only the visible painting differs.
     local existing_bt = vim.b[vim.api.nvim_win_get_buf(listing_win)].himalaya_buffer_type
     local show_progress = existing_bt ~= 'listing' and existing_bt ~= 'thread-listing'
+
+    if not show_progress then
+      -- Firing `ps` separate single-envelope CLI processes (below) made
+      -- sense when himalaya's Gmail backend fetched envelopes serially no
+      -- matter what - same total wall-clock either way, just painted
+      -- incrementally. Now that the backend pools connections internally
+      -- (see the "Fan out Gmail envelope-metadata fetches..." fork commit),
+      -- spawning `ps` separate processes instead turns a ~1-2s fetch into
+      -- ps/MAX_CONCURRENT_ROW_FETCHES rounds of process-spawn+auth
+      -- overhead - measured ~14s for a 20-row page vs ~1.2s batched. A
+      -- listing is already on screen here (the "loading..." winbar covers
+      -- the wait), so there's no progressive-painting benefit to lose by
+      -- using one batched call instead, same as the search/cursor-restore
+      -- path above already does.
+      progressive_fetch_active = false
+      fetch_job = request.json({
+        cmd = envelope_list_cmd(cli_qry),
+        unwrap = 'envelopes',
+        args = { folder, acct_flag, ps, fetch_page, cli_qry },
+        msg = string.format('Fetching %s envelopes', folder),
+        is_stale = function()
+          return my_gen ~= fetch_generation
+        end,
+        on_error = function()
+          fetch_job = nil
+          log.err(string.format('Fetching %s envelopes failed', folder))
+          if vim.api.nvim_win_is_valid(listing_win) then
+            vim.wo[listing_win].winbar = prev_winbar
+          end
+        end,
+        on_data = function(data)
+          fetch_job = nil
+          if not vim.api.nvim_win_is_valid(listing_win) then
+            return
+          end
+          vim.api.nvim_win_call(listing_win, function()
+            on_list_with(account, folder, fetch_page, ps, qry, sort, data, (fetch_page - 1) * ps)
+          end)
+          prime_next_page(fetch_page + 1)
+        end,
+      })
+      return
+    end
+
     if show_progress then
       vim.api.nvim_win_call(listing_win, function()
         local bufnr = vim.api.nvim_create_buf(true, true)
@@ -1264,6 +1310,9 @@ function M.flag_add(first_line, last_line)
     end
     local context = require('himalaya.state.context')
     local account, folder = context.resolve()
+    -- Apply locally right away instead of waiting on the round-trip - the
+    -- CLI call itself is fast, reverted below if it turns out to fail.
+    local applied_locally = set_flags_locally(ids, flag, true)
     probe.cancel(function()
       request.plain({
         -- himalaya v2 requires the flag as a `--flag` option, not a bare
@@ -1271,6 +1320,11 @@ function M.flag_add(first_line, last_line)
         cmd = 'flag add %s --mailbox %q --flag %s %s',
         args = { account_flag(account), folder, flag:lower(), ids },
         msg = 'Adding flag: ' .. flag,
+        on_error = function()
+          if applied_locally then
+            set_flags_locally(ids, flag, false)
+          end
+        end,
         on_data = function()
           require('himalaya.events').emit('EmailFlagAdded', {
             account = account,
@@ -1278,7 +1332,7 @@ function M.flag_add(first_line, last_line)
             ids = ids,
             flag = flag,
           })
-          if not set_flags_locally(ids, flag, true) then
+          if not applied_locally then
             refresh_listing(account, folder)
           end
         end,
@@ -1302,6 +1356,9 @@ function M.flag_remove(first_line, last_line)
     end
     local context = require('himalaya.state.context')
     local account, folder = context.resolve()
+    -- Apply locally right away instead of waiting on the round-trip - the
+    -- CLI call itself is fast, reverted below if it turns out to fail.
+    local applied_locally = set_flags_locally(ids, flag, false)
     probe.cancel(function()
       request.plain({
         -- himalaya v2 requires the flag as a `--flag` option, not a bare
@@ -1309,6 +1366,11 @@ function M.flag_remove(first_line, last_line)
         cmd = 'flag remove %s --mailbox %q --flag %s %s',
         args = { account_flag(account), folder, flag:lower(), ids },
         msg = 'Removing flag: ' .. flag,
+        on_error = function()
+          if applied_locally then
+            set_flags_locally(ids, flag, true)
+          end
+        end,
         on_data = function()
           require('himalaya.events').emit('EmailFlagRemoved', {
             account = account,
@@ -1316,7 +1378,7 @@ function M.flag_remove(first_line, last_line)
             ids = ids,
             flag = flag,
           })
-          if not set_flags_locally(ids, flag, false) then
+          if not applied_locally then
             refresh_listing(account, folder)
           end
         end,
@@ -1333,18 +1395,26 @@ function M.mark_seen(first_line, last_line)
 
   local context = require('himalaya.state.context')
   local account, folder = context.resolve()
+  -- Apply locally right away instead of waiting on the round-trip - the
+  -- CLI call itself is fast, reverted below if it turns out to fail.
+  local applied_locally = set_flags_locally(ids, 'seen', true)
   probe.cancel(function()
     request.plain({
       cmd = 'flag add %s --mailbox %q --flag seen %s',
       args = { account_flag(account), folder, ids },
       msg = 'Marking as seen',
+      on_error = function()
+        if applied_locally then
+          set_flags_locally(ids, 'seen', false)
+        end
+      end,
       on_data = function()
         require('himalaya.events').emit('EmailMarkedSeen', {
           account = account,
           folder = folder,
           ids = ids,
         })
-        if not set_flags_locally(ids, 'seen', true) then
+        if not applied_locally then
           saved_view = vim.fn.winsaveview()
           refresh_listing(account, folder)
         end
@@ -1361,18 +1431,26 @@ function M.mark_unseen(first_line, last_line)
 
   local context = require('himalaya.state.context')
   local account, folder = context.resolve()
+  -- Apply locally right away instead of waiting on the round-trip - the
+  -- CLI call itself is fast, reverted below if it turns out to fail.
+  local applied_locally = set_flags_locally(ids, 'seen', false)
   probe.cancel(function()
     request.plain({
       cmd = 'flag remove %s --mailbox %q --flag seen %s',
       args = { account_flag(account), folder, ids },
       msg = 'Marking as unseen',
+      on_error = function()
+        if applied_locally then
+          set_flags_locally(ids, 'seen', true)
+        end
+      end,
       on_data = function()
         require('himalaya.events').emit('EmailMarkedUnseen', {
           account = account,
           folder = folder,
           ids = ids,
         })
-        if not set_flags_locally(ids, 'seen', false) then
+        if not applied_locally then
           saved_view = vim.fn.winsaveview()
           refresh_listing(account, folder)
         end

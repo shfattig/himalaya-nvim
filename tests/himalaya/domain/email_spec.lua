@@ -450,28 +450,19 @@ describe('himalaya.domain.email (extended)', function()
       assert.truthy(captured_json.cmd:find('envelope list'))
     end)
 
-    it('replaces the loading winbar with real headers once every row settles', function()
+    it('restores the previous winbar if a refresh of an already-open listing fails', function()
+      -- make_listing_buf's buffer type makes this the "already showing a
+      -- listing" case (single batched call, see do_fetch's not-show_progress
+      -- branch) - simulate a real prior header, not a bare "loading..." -
+      -- so restoration is actually observable rather than a no-op.
       track(make_listing_buf({ 1 }))
-      vim.wo.winbar = '%#Comment# loading...%*'
+      vim.wo.winbar = 'Himalaya/envelopes [INBOX] [all] [page 1⁄1]'
       email.list_with('acct', 'INBOX', 1, '')
-      assert.is_true(#captured_json_calls > 0)
-      -- Every row errors (simulates total fetch failure) - on_list_with()
-      -- still runs exactly once, on_error()'s callback replaces the
-      -- winbar with real (empty-folder) headers, not just clearing it.
-      -- Concurrency is bounded (MAX_CONCURRENT_ROW_FETCHES), so resolving
-      -- an early row dynamically queues another - keep draining forward
-      -- through captured_json_calls as it grows, rather than a fixed
-      -- count, until nothing new is left (prime_next_page's own trailing
-      -- request.json() call has no on_error field, hence the guard).
-      local i = 1
-      while i <= #captured_json_calls do
-        local call = captured_json_calls[i]
-        if call.on_error then
-          call.on_error()
-        end
-        i = i + 1
-      end
+      assert.are.equal(1, #captured_json_calls)
+      assert.truthy(vim.wo.winbar:find('loading'))
+      captured_json_calls[1].on_error()
       assert.is_falsy(vim.wo.winbar:find('loading'))
+      assert.truthy(vim.wo.winbar:find('page 1'))
     end)
 
     it('stale check returns true after new list_with', function()
@@ -485,13 +476,19 @@ describe('himalaya.domain.email (extended)', function()
   end)
 
   describe('list_with progressive fetch', function()
-    -- do_fetch() now fires one request.json() call per listing row
-    -- (page-size 1 each) instead of one call for the whole page, so it can
-    -- paint rows as they land instead of leaving the listing blank for the
-    -- whole multi-second wait - see the do_fetch rewrite. ps in this
-    -- headless test env is winheight(0)-1 = 21 (well above
-    -- MAX_CONCURRENT_ROW_FETCHES = 10), so these assertions exercise real
-    -- queuing/backfill behavior, not just "one request happened".
+    -- do_fetch() fires one request.json() call per listing row (page-size 1
+    -- each) instead of one call for the whole page, so it can paint rows as
+    -- they land instead of leaving the listing blank for the whole wait -
+    -- but only on first-ever open (no listing buffer exists anywhere yet),
+    -- where there's nothing on screen for that to visibly improve. Once a
+    -- listing is already showing (paging, folder switch, plain refresh),
+    -- one batched call replaces it instead - firing `ps` separate CLI
+    -- processes there no longer pays off now that the backend itself pools
+    -- connections internally (measured ~14s vs ~1.2s for a 20-row page).
+    -- ps in this headless test env is winheight(0)-1 = 21 (well above
+    -- MAX_CONCURRENT_ROW_FETCHES = 10), so the first-open assertions below
+    -- exercise real queuing/backfill behavior, not just "one request
+    -- happened".
     local function make_plain_buf()
       local buf = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_set_current_buf(buf)
@@ -536,16 +533,17 @@ describe('himalaya.domain.email (extended)', function()
       assert.is_true(found_real)
     end)
 
-    it('does not repaint an already-visible listing while refreshing (paging/folder switch)', function()
+    it('fetches an already-visible listing as one batched call, without repainting it', function()
       -- make_listing_buf already sets himalaya_buffer_type = 'listing', so
-      -- this is the "already showing a listing" case, not first-open.
+      -- this is the "already showing a listing" case, not first-open - one
+      -- batched request, not `ps` separate per-row ones.
       track(make_listing_buf({ 1 }))
       local before = vim.api.nvim_buf_get_lines(0, 0, -1, false)
       email.list_with('acct', 'INBOX', 1, '')
-      -- Rows still fetched in parallel underneath...
-      assert.are.equal(10, #captured_json_calls)
-      -- ...but the buffer is untouched until on_list_with() runs at the
-      -- end - no placeholder rows painted over the existing content.
+      assert.are.equal(1, #captured_json_calls)
+      assert.truthy(captured_json_calls[1].cmd:find('envelope list'))
+      -- ...and the buffer is untouched until on_data's on_list_with() call
+      -- runs - no placeholder rows painted over the existing content.
       local after = vim.api.nvim_buf_get_lines(0, 0, -1, false)
       assert.same(before, after)
     end)
