@@ -778,7 +778,11 @@ function M.read()
   probe.cancel(function()
     plog('probe cancelled, starting fetch')
     request.plain({
-      cmd = 'message read %s --mailbox %q %s',
+      -- --seen marks it Seen server-side too, matching what
+      -- mark_envelope_seen() below already fakes in the UI unconditionally
+      -- - without it, a re-fetched listing would revert the row back to
+      -- unseen since Gmail was never actually told.
+      cmd = 'message read %s --mailbox %q --seen %s',
       args = { account_flag(account), folder, current_id },
       msg = string.format('Fetching email %s', current_id),
       on_error = function()
@@ -1168,6 +1172,58 @@ function M.select_folder_then_move(first_line, last_line)
   end)
 end
 
+--- Apply a flag add/remove to already-cached envelope data and re-render
+--- the listing locally, instead of re-fetching the whole page just to
+--- reflect a change we already know the outcome of. The flag CLI call
+--- itself is a single fast API request; re-listing afterwards was the
+--- actual source of the multi-second "long running load" on every gs/gS/
+--- gFa/gFr, since a refresh of an already-open listing shows a blocking
+--- spinner rather than the progressive per-row paint first-open gets.
+--- @param ids string  space-separated email ids
+--- @param flag string  flag name (any case)
+--- @param add boolean  true to add the flag, false to remove it
+--- @return boolean  true if applied locally; false if the caller should
+---   fall back to refresh_listing (no flat listing buffer open, e.g.
+---   thread-listing or reading-pane-only context)
+local function set_flags_locally(ids, flag, add)
+  local listing_win, listing_bufnr, listing_type = win.find_by_buftype({ 'listing', 'thread-listing' })
+  if not listing_win or listing_type ~= 'listing' then
+    return false
+  end
+  local ok, envelopes = pcall(vim.api.nvim_buf_get_var, listing_bufnr, 'himalaya_envelopes')
+  if not (ok and envelopes) then
+    return false
+  end
+
+  local id_set = {}
+  for id in ids:gmatch('%S+') do
+    id_set[id] = true
+  end
+  local name = flag:lower()
+  for _, env in ipairs(envelopes) do
+    if id_set[tostring(env.id)] then
+      local flags = env.flags or {}
+      local has = flags_util.has(flags, name)
+      if add and not has then
+        table.insert(flags, flag)
+        env.flags = flags
+      elseif not add and has then
+        local kept = {}
+        for _, f in ipairs(flags) do
+          if flags_util.flag_name(f) ~= name then
+            table.insert(kept, f)
+          end
+        end
+        env.flags = kept
+      end
+    end
+  end
+
+  vim.api.nvim_buf_set_var(listing_bufnr, 'himalaya_envelopes', envelopes)
+  render_listing_buffer(listing_bufnr, envelopes)
+  return true
+end
+
 --- Get current flags for the email under cursor from cached envelopes.
 --- @return string[]
 local function get_current_flags()
@@ -1222,7 +1278,9 @@ function M.flag_add(first_line, last_line)
             ids = ids,
             flag = flag,
           })
-          refresh_listing(account, folder)
+          if not set_flags_locally(ids, flag, true) then
+            refresh_listing(account, folder)
+          end
         end,
       })
     end)
@@ -1258,7 +1316,9 @@ function M.flag_remove(first_line, last_line)
             ids = ids,
             flag = flag,
           })
-          refresh_listing(account, folder)
+          if not set_flags_locally(ids, flag, false) then
+            refresh_listing(account, folder)
+          end
         end,
       })
     end)
@@ -1284,8 +1344,10 @@ function M.mark_seen(first_line, last_line)
           folder = folder,
           ids = ids,
         })
-        saved_view = vim.fn.winsaveview()
-        refresh_listing(account, folder)
+        if not set_flags_locally(ids, 'seen', true) then
+          saved_view = vim.fn.winsaveview()
+          refresh_listing(account, folder)
+        end
       end,
     })
   end)
@@ -1310,8 +1372,10 @@ function M.mark_unseen(first_line, last_line)
           folder = folder,
           ids = ids,
         })
-        saved_view = vim.fn.winsaveview()
-        refresh_listing(account, folder)
+        if not set_flags_locally(ids, 'seen', false) then
+          saved_view = vim.fn.winsaveview()
+          refresh_listing(account, folder)
+        end
       end,
     })
   end)
