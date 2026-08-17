@@ -166,16 +166,19 @@ end
 --- it's on PATH, falling back to the bespoke M.to_text parser above
 --- otherwise, or if pandoc unexpectedly fails/produces nothing.
 ---
---- Target is `-t plain`, not `-t markdown`: pandoc's markdown writer tries
---- to faithfully round-trip the HTML's div/table structure as literal
---- fenced-div and grid-table syntax, which for a marketing email's
---- full-width layout table produces walls of box-drawing borders padded to
---- the width of the entire message. `plain` skips all of that and reads
---- like an actual plain-text email; pandoc_filter.lua (--lua-filter, a
---- sibling file, not a neovim module) additionally flattens any remaining
---- layout tables into flowing paragraphs and drops alt-text-less tracking
---- pixels, since even `plain` still renders real <table> elements as an
---- ASCII grid otherwise.
+--- Target is `-t markdown`, not `-t plain`: `plain` discards <a href> links
+--- entirely (renders just the link text), while `markdown` preserves them
+--- as `[text](url)`. Reading with `-native_divs-native_spans` disabled
+--- keeps that from also round-tripping every styling-only <div>/<span> as
+--- literal `::: ... :::` fenced-div and `[x]{style="..."}` bracketed-span
+--- syntax - those extensions only gate how the AST is *written*, so
+--- disabling them on the *reader* instead makes html-to-Pandoc parsing drop
+--- the wrapper and keep just its contents. pandoc_filter.lua (--lua-filter,
+--- a sibling file, not a neovim module) still flattens layout tables into
+--- flowing paragraphs and drops alt-text-less tracking pixels at the AST
+--- level, so switching writers doesn't reintroduce the "wall of
+--- box-drawing borders" a full-width layout <table> would otherwise
+--- produce under either writer.
 --- @param html string
 --- @param callback fun(lines: string[])
 function M.convert(html, callback)
@@ -184,7 +187,15 @@ function M.convert(html, callback)
     return
   end
   vim.system(
-    { 'pandoc', '-f', 'html', '-t', 'plain', '--wrap=none', '--lua-filter=' .. PANDOC_FILTER },
+    {
+      'pandoc',
+      '-f',
+      'html-native_divs-native_spans',
+      '-t',
+      'markdown',
+      '--wrap=none',
+      '--lua-filter=' .. PANDOC_FILTER,
+    },
     { text = true, stdin = html },
     function(result)
       vim.schedule(function()
